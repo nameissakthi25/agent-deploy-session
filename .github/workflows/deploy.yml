@@ -130,6 +130,18 @@ jobs:
       # short-lived token for its own registry and nobody can issue one for
       # sshd.
       # =====================================================================
+      # The smoke test below runs from the repository, so it has to be here.
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install what the smoke test needs
+        # Only httpx: the smoke test talks HTTP and asserts. It deliberately
+        # does not import the app, so it needs none of requirements.txt.
+        run: pip install "httpx==0.28.1"
+
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
