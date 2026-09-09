@@ -12,7 +12,9 @@ Everything here is a hard assertion, because everything here is predictable.
 """
 
 import os
+import re
 import sys
+from pathlib import Path
 
 import httpx
 
@@ -128,18 +130,81 @@ def check_guards() -> None:
 
 
 def check_ui() -> None:
+    """Proxy routes, checked by CONTENT rather than status code.
+
+    Status codes are close to meaningless behind this proxy. The catch-all
+    route sends anything unmatched to Streamlit, which answers every path with
+    200 and its own HTML -- so a completely broken Phoenix returns 200 for the
+    page AND 200 for every asset, and renders blank.
+
+    That happened, twice, from two different misconfigurations of the /traces
+    route. The status-only version of this function passed through both.
+    """
     response = get("/")
     if response is not None:
         check(
             "/ serves the UI", response.status_code == 200, f"got {response.status_code}"
         )
-    response = get("/traces")
-    if response is not None:
         check(
-            "/traces serves Phoenix",
-            response.status_code == 200,
-            f"got {response.status_code}",
+            "/ is actually Streamlit",
+            "streamlit" in response.text.lower(),
+            f"body starts {response.text[:60]!r}",
         )
+
+    response = get("/traces")
+    if response is None:
+        return
+    check(
+        "/traces serves Phoenix",
+        response.status_code == 200,
+        f"got {response.status_code}",
+    )
+    check(
+        "/traces is Phoenix, not the UI catch-all",
+        "phoenix" in response.text.lower() and "streamlit" not in response.text.lower(),
+        f"body starts {response.text[:60]!r}",
+    )
+    check_phoenix_assets(response.text)
+
+
+def check_phoenix_assets(index_html: str) -> None:
+    """Every asset the Phoenix page references must serve its own type.
+
+    This is the check that actually detects a broken /traces route. Phoenix
+    emits asset URLs under /traces only when PHOENIX_HOST_ROOT_PATH is set,
+    and those URLs only resolve when Caddy uses handle_path -- which strips
+    the prefix -- rather than handle. Get either half wrong and the assets
+    come back as HTML, Streamlit\'s or Phoenix\'s own SPA fallback, with
+    status 200 either way.
+    """
+    assets = sorted(set(re.findall(r'(?:src|href)="(/traces/[^"]+)"', index_html)))
+    if not assets:
+        check(
+            "/traces references assets under /traces",
+            False,
+            "no /traces/... URLs in the page; is PHOENIX_HOST_ROOT_PATH set?",
+        )
+        return
+
+    expected = {".js": "javascript", ".css": "css", ".ico": "image"}
+    wrong = []
+    for path in assets:
+        suffix = Path(path).suffix
+        if suffix not in expected:
+            continue
+        asset = get(path)
+        if asset is None:
+            wrong.append(f"{path} unreachable")
+            continue
+        content_type = asset.headers.get("content-type", "")
+        if expected[suffix] not in content_type:
+            wrong.append(f"{path} served as {content_type}")
+
+    check(
+        f"all {len(assets)} Phoenix assets serve their own content type",
+        not wrong,
+        "; ".join(wrong[:3]),
+    )
 
 
 def main() -> int:

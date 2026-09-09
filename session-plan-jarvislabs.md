@@ -321,15 +321,37 @@ retrieval span in it now, showing which documents came back. For the first time
 you can *check* whether the answer came from the documents or whether the model
 filled in the gaps itself.
 
-> **Demo-question warning.** The corpus is 42 articles, every one of them derived
-> from a real incident in the source dataset. There are no policy how-to
-> documents, so **"how do I reset my password" has no good answer** and will look
-> like a retrieval failure. Ask incident-shaped questions. The dataset has 14
-> issue families and, for example, 26 separate incidents titled "GlobalProtect VPN
-> disconnects immediately" — so there are genuine near-duplicate documents for
-> retrieval to get wrong, which is the more interesting demo anyway.
+> **The corpus has two halves, and the difference shows on screen.** 50 articles:
+> 42 generated from real incidents in the source dataset, and 8 hand-written
+> policy and how-to documents. Both kinds of question now answer well — "how do I
+> reset my password" returns the policy article with the portal URL and the
+> password rules, cited.
+>
+> Two things worth demonstrating rather than avoiding. The dataset has 14 issue
+> families and, for example, 26 separate incidents titled "GlobalProtect VPN
+> disconnects immediately", so there are genuine near-duplicate documents for
+> retrieval to get wrong. And on *"how do I get access to a finance shared
+> drive?"* two incident articles titled "Access denied to Finance shared drive"
+> outrank the policy article that actually answers it — 0.818 and 0.811 against
+> 0.808 — because the incident titles match the question lexically. The answer
+> still comes out right, since all three are inside the retrieval window, but it
+> is a live example of retrieval preferring familiar phrasing over the correct
+> document.
 
 ## 0:49 — Guardrails, in and out
+
+> **Timing: this segment is now overcommitted.** The slot is nine minutes and the
+> notes below are roughly eight minutes of talking *before* the live demos.
+> Something has to go. In order of what to cut first:
+>
+> 1. The two blocked inputs — describe them instead of running them, the trace
+>    screenshot makes the point
+> 2. "The guard we tried to add, and didn't" — self-contained, nothing later
+>    depends on it
+> 3. The guard-eval table — but keep the 14% number even if you cut the table
+>
+> Do not cut the tool guard at 0:58 to make room. That one is the reason the
+> session exists.
 
 Written by hand rather than pulled from a library, so people see the mechanism
 instead of a config file.
@@ -369,6 +391,65 @@ platform: a hosted model arrives with its own safety filters already applied.
 Ours has none. **Everything protecting this system is code we wrote, and we have
 just measured how good that code is.** Full control means full responsibility.
 Say it plainly to a room that may be pitching self-hosting to clients.
+
+### The guard we tried to add, and didn't — 4 minutes
+
+*Budget this at four minutes and no more. If the segment is running long, cut
+straight from the table above to "the third place guardrails belong". Everything
+here is real and none of it is load-bearing for a later segment.*
+
+Ask Stage 1: **"explain chatgpt."** It explains ChatGPT, at length, helpfully.
+
+All three guards ran. All three correctly allowed it — the input was short and
+clean, Stage 1 calls no tools, and the answer leaked no prompt, no PII, no
+security bypass. **The policy simply had no opinion about scope.** This is worth
+sitting with for a second: "we have guardrails" is not a property of a system,
+it is a list, and this was not on the list.
+
+So add a clause. Three attempts, each measured against cases written down first:
+
+| Clause | Result |
+|---|---|
+| "discusses a topic other than internal IT support" | Blocks a *pure* off-topic answer 6/6. **Allows the realistic one 6/6** — Stage 1 hedges, explaining ChatGPT and then offering help with "its integration within our internal IT systems", which reads as on-topic |
+| "explains any external product, even briefly" | Catches the hedge. Also blocks half the corpus — **BitLocker, Okta, GlobalProtect and Intune are all external products**. Eval 97.9% → 72.9%, smoke test failed on all three stages |
+| "answers a question that is not a request for internal IT support" — *with the question shown to the judge* | 8/8 on a hand-built case set. Then blocked **every policy question** in the eval: "what is the policy on requesting a new laptop" reads as HR. Eval 97.9% → **33.3%**, hard fail |
+
+Then stop, and ship nothing. **A guard that intermittently refuses correct
+answers is worse than the gap it closes**, and Stage 1 answering off-topic is a
+teaching point rather than a defect — it is the answer to the question you asked
+the room at 0:00.
+
+Three things to draw out, in order of how much they are worth:
+
+1. **The third attempt is the dangerous one.** It scored 8/8 and was wrong. The
+   case set contained no policy questions — the half of the corpus added that
+   same day — so it measured the wrong thing, confidently, and produced a number
+   that justified shipping. A measurement is only as good as the cases you
+   thought to include, and the cases you forget are the ones you just changed.
+2. **The boundary is genuinely ambiguous.** "Internal IT support" versus "HR
+   policy" is not a line one sentence can carve in this corpus. That is a real
+   answer to "just add a guardrail for it" — some rules are not expressible as
+   prose, and want a classifier or an intent allowlist instead.
+3. **A prose policy clause is engineering, not writing.** One word — "discusses"
+   versus "explains… even briefly" — flips it from useless to overreaching. The
+   only way to know is to measure it against cases you wrote down first.
+
+**And the bug found on the way, which is the one that would have cost you this
+demo.** The policy judge was running at `temperature=0.7` — the model card's
+*generation* setting — on a call that classifies rather than writes. It blocked a
+correct answer **3 times in 15**. A 20% flake rate in a release gate: the smoke
+test intermittent, the deploy gate intermittent, one CI run red for no reason
+anybody could see. Now `temperature=0.0`, with a test asserting it.
+
+Show that one on screen if you show nothing else here. It looks like the
+architecture misbehaving and it is one wrong sampling parameter.
+
+One thread to leave hanging, because 1:13 picks it up: **the judge can only
+assess what it is shown.** It never sees the retrieved documents, so it cannot
+tell a cited fact from an invented one — a "must not invent" clause is
+unjudgeable by construction. That exact mistake has now been made three times in
+this repo: in this policy, in the eval rubric, and in the third topicality
+attempt. There is a test whose only job is to catch a fourth.
 
 Flag that there's a third place guardrails belong, and it only exists once you
 have multiple agents. That's next.
@@ -419,8 +500,40 @@ predictable, not by how big it is.
 **Predictable, so test it properly.** Guardrails are ordinary functions with
 ordinary inputs and outputs. Output schemas either match or don't. Routing can be
 tested by handing the supervisor a state and asserting which worker it picks, with
-the model stubbed. None of these need a model call. The suite is **60 tests and
-finishes in about a second locally**, 2.0–2.3s in CI.
+the model stubbed. None of these need a model call. The suite is **63 tests and
+finishes in about a second locally**, 2.0–2.4s in CI.
+
+**A judge can only assess what you show it.** This is the single most
+transferable idea in the segment, and it is worth three minutes because the room
+will otherwise spend a month learning it the slow way.
+
+The output guard's judge sees the answer. Nothing else. Not the retrieved
+documents, not the question — until we passed the question in deliberately. So:
+
+- *"must not invent an approval workflow"* is **unjudgeable by construction**. A
+  cited workflow and an invented one look identical from the answer alone. When
+  this clause was in the guard's policy it blocked correct answers 3/3; when the
+  same idea reappeared in the eval rubric it scored a correct, fully-cited answer
+  **1/5**.
+- Worse, that rubric had scored the *same question* 5/5 the week before — back
+  when the corpus could not answer it and "I don't know" was the right reply.
+  **Improving the corpus made the score go down.** A regression in the
+  measurement, not in the system, which is a genuinely disorienting thing to
+  debug if you have not seen it before.
+- Topicality has the same shape but a different fix. It is a property of the
+  *(question, answer) pair* — "explaining ChatGPT" and "explaining why BitLocker
+  fails" are the same kind of answer, and only the question separates them. The
+  evidence was missing, so we handed it over. Groundedness could not be fixed
+  that way, because the evidence is the whole corpus — which is precisely why
+  groundedness is an eval and not a guard.
+
+Two rules fall out, and they are cheap to state and expensive to learn:
+**write the clause so it can be answered from what the judge can see**, and
+**when a rubric and a system disagree, suspect the rubric first.**
+
+There is now a test, `test_policy_clauses_are_all_judgeable_from_the_answer_alone`,
+whose entire job is to fail if somebody writes a fourth one. Show it. A three-line
+test that encodes a lesson learned three times is a good advertisement for tests.
 
 **Not predictable, so score it instead.** Whether an answer is *good* can't be
 asserted. You run it across a batch of examples, score the batch, and check the
@@ -435,11 +548,18 @@ dataset against two different stages**:
 
 | Target | Score | Gate |
 |---|---|---|
-| Stage 3 (`/v3`) | 96.9–100% | PASS, exit 0 |
+| Stage 3 (`/v3`) | 97.9% | PASS, exit 0 |
 | Stage 1 (`/v1`) | 31–34% | **FAIL, exit 1** |
 
 A gate that never fails is not a gate. This one fails on a version that genuinely
 cannot answer the questions, which is exactly what you want it doing at 1:22.
+
+> Be precise if you quote both numbers: **they were measured on different
+> datasets.** Stage 1's 31–34% is from the original 8-example set; Stage 3's
+> 97.9% is from the current 12-example set, which added four policy questions
+> once the corpus could answer them. Re-run Stage 1 against the 12-example set
+> before putting the two side by side on a slide —
+> `EVAL_ROUTE=v1 python evals/run_eval.py`.
 
 The line to land: people try to assert an exact response from a language model,
 watch it fail randomly, and conclude agent systems can't be tested. They can. The
@@ -604,12 +724,13 @@ knowing it exists and what it costs to not have it.
 
 **Content:**
 
-- [ ] Demo questions chosen and rehearsed, all incident-shaped — see the corpus
-      warning at 0:40
+- [ ] Demo questions chosen and rehearsed. Both incident- and policy-shaped
+      questions work now — see the corpus note at 0:40
 - [ ] Blocked inputs tested end to end against the deployed Stage 3
 - [ ] Rewrite the 0:04 narration around the measured H100 numbers if you are
       working from older slides; the old draft quoted an A100 at $1.49/hr
-- [ ] Decide whether to add a handful of policy how-to articles to the corpus, or
+- [x] ~~Decide whether to add policy how-to articles to the corpus~~ — done,
+      8 added in `policy/`, corpus is 50 articles. Historic note follows:
       to state the gap on screen and only ask incident questions
 
 **Operational:**

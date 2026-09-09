@@ -147,7 +147,7 @@ only helps when many users are asking at once.
 
 Two halves of the 1:13 lesson, deliberately separate:
 
-- `make test` — the predictable things, asserted. 60 tests, under a second.
+- `make test` — the predictable things, asserted. 63 tests, under a second.
 - `make eval` — the unpredictable things, scored. Posts to the real deployed
   endpoint, judges with the real model, exits non-zero below a threshold set
   in `evals/run_eval.py`.
@@ -156,7 +156,7 @@ The same dataset against different stages shows the gate is real:
 
 | Target | Average | Normalised | Gate |
 |---|---|---|---|
-| Stage 3 (`v3`) | 5.00/5 | 100% | PASS, exit 0 |
+| Stage 3 (`v3`) | 4.92/5 | 97.9% | PASS, exit 0 |
 | Stage 1 (`v1`) | ~2.3/5 | 31–34% | FAIL, exit 1 |
 
 `make dataset` turns thumbs-downed traces into `evals/datasets/from_feedback.json`.
@@ -187,7 +187,7 @@ Served by Caddy on port 80. All three stages, Phoenix and the UI are live.
 | `make fetch` | Download the pinned source dataset into `data/` |
 | `make data` | Rebuild the committed tool data from `data/` |
 | `make toolcheck` | The 60-run tool-calling gate |
-| `make test` | Fast test suite — 60 tests, under a second |
+| `make test` | Fast test suite — 63 tests, under a second |
 | `make guardeval` | Score `input_guard` against the PII answer key |
 | `make corpus` | Rebuild the 50 KB articles (42 generated + 8 from `policy/`) |
 | `make index` | Index the corpus into Qdrant — the one manual step |
