@@ -2,7 +2,7 @@
 
 Demo repository for the session **"Serving and Shipping It Yourself: Chatbot → RAG →
 Multi-Agent on Your Own GPU."** One use case, deployed three times against one
-self-hosted model, on a single JarvisLabs A100 80GB box under Docker Compose.
+self-hosted model, on a single JarvisLabs H100 80GB box under Docker Compose.
 
 The full brief is in [`build-spec.md`](build-spec.md); the run of show is in
 [`session-plan-jarvislabs.md`](session-plan-jarvislabs.md).
@@ -16,7 +16,7 @@ before starting the next.
 - [x] 2. `scripts/toolcall_check.py` — the tool-calling go/no-go gate
 - [x] 3. Stage 1 app + Caddy — request works through the proxy
 - [x] 4. Phoenix + `observability.py` — one trace arrives, 2 spans
-- [x] 5. Guardrails, with their tests — 46 tests in 0.7s, guard eval scored
+- [x] 5. Guardrails, with their tests — fast suite green, guard eval scored
 - [x] 6. Stage 2 + corpus indexing — 42 articles indexed, retrieval span verified
 - [x] 7. Stage 3 + tool guard — trace tree verified, rejection span verified
 - [x] 8. UI + feedback writing — thumbs write annotations, verified in Phoenix
@@ -86,7 +86,7 @@ own `write_feedback` span.
 
 | Job | Trigger | What it does |
 |---|---|---|
-| `test` | every PR and push | install, `ruff`, fast tests |
+| `test` | every PR and push | install, `ruff`, the 60 fast tests |
 | `build` | push to `main` | build the app image, tag it with the commit SHA, push to GHCR |
 | `deploy` | after build | SSH to the instance, pull that SHA, restart **`chat-agents` only**, smoke test |
 | `eval` | after deploy | score the deployed Stage 3; non-zero exit fails the job |
@@ -124,22 +124,30 @@ goes 1.09s to 2.11s.** That is continuous batching, and it is why self-hosting
 is viable at all. It also means unit cost swings 16x on utilisation alone --
 utilisation, not the hourly rate, decides what a token costs you.
 
-Against a hosted rate of USD 0.60/1M this card reaches **0.98x at full
-saturation** and is 16x worse when idle. So self-hosting breaks even only at
-close to 100% utilisation. Set `HOSTED_COMPARISON` in
-`scripts/cost_report.py` to a rate you have actually checked, and name the
-model on screen -- the verdict depends entirely on which model you compare to.
+The comparison is deliberately against **the same model**, so nobody can argue
+the gap is really a capability gap. Qwen3.8-27B is listed by hosted providers at
+USD 2.00-3.20 per million output tokens (OpenRouter provider table, checked
+2026-09-09). `HOSTED_COMPARISON` uses the cheapest, USD 2.00, because that is the
+hardest bar for self-hosting to clear.
+
+Against it, this card is **3.4x cheaper at 32 concurrent** and **4.8x more
+expensive at 1**. Break-even is about **362 tokens/sec, or roughly 7 concurrent
+requests** -- `make cost` prints that line itself. Below it, buy the same model by
+the token; above it, own the card.
+
+Name the provider and the model when you quote this on screen. The verdict is
+only as good as this one number.
 
 One consequence worth stating at 0:58: a Stage 3 request makes its model
 calls **sequentially**, so a single user's request is a batch of one and pays
-the ~USD 9.54 rate, not the 0.59 one. Batching only helps when many users are
-asking at once.
+the ~USD 9.54 rate, not the 0.59 one -- the worst row in the table. Batching
+only helps when many users are asking at once.
 
 ## Evaluation
 
 Two halves of the 1:13 lesson, deliberately separate:
 
-- `make test` — the predictable things, asserted. 55 tests, under a second.
+- `make test` — the predictable things, asserted. 60 tests, under a second.
 - `make eval` — the unpredictable things, scored. Posts to the real deployed
   endpoint, judges with the real model, exits non-zero below a threshold set
   in `evals/run_eval.py`.
@@ -149,7 +157,7 @@ The same dataset against different stages shows the gate is real:
 | Target | Average | Normalised | Gate |
 |---|---|---|---|
 | Stage 3 (`v3`) | 5.00/5 | 100% | PASS, exit 0 |
-| Stage 1 (`v1`) | ~2.3/5 | ~31–34% | FAIL, exit 1 |
+| Stage 1 (`v1`) | ~2.3/5 | 31–34% | FAIL, exit 1 |
 
 `make dataset` turns thumbs-downed traces into `evals/datasets/from_feedback.json`.
 Note that only feedback collected **after** the root span carried
@@ -158,7 +166,7 @@ score and are skipped.
 
 ## Routes
 
-Served by Caddy on port 80 once step 3 lands. Nothing but `vllm` is up yet.
+Served by Caddy on port 80. All three stages, Phoenix and the UI are live.
 
 | Route | Service | Port | Stage |
 |---|---|---|---|
@@ -179,9 +187,9 @@ Served by Caddy on port 80 once step 3 lands. Nothing but `vllm` is up yet.
 | `make fetch` | Download the pinned source dataset into `data/` |
 | `make data` | Rebuild the committed tool data from `data/` |
 | `make toolcheck` | The 60-run tool-calling gate |
-| `make test` | Fast test suite — 46 tests, under a second |
+| `make test` | Fast test suite — 60 tests, under a second |
 | `make guardeval` | Score `input_guard` against the PII answer key |
-| `make corpus` | Rebuild the 42 KB articles from `data/` |
+| `make corpus` | Rebuild the 50 KB articles (42 generated + 8 from `policy/`) |
 | `make index` | Index the corpus into Qdrant — the one manual step |
 | `make dataset` | Build a dataset from thumbs-downed traces |
 | `make eval` | Score the deployed pipeline; exits non-zero below threshold |
@@ -205,14 +213,19 @@ Both JSON files are generated from a pinned revision of
 [`ATTRIBUTION.md`](ATTRIBUTION.md) for provenance, licensing, and the two
 things about this data worth saying out loud during the session.
 
-The corpus (step 6) will be 30–50 markdown KB articles built from the same
-source — the dataset has 14 issue families and, for instance, 26 incidents
-sharing the title "GlobalProtect VPN disconnects immediately", so retrieval has
-genuine near-duplicate documents to get wrong.
+The corpus is 42 markdown KB articles built from the same source. The dataset has
+14 issue families and, for instance, 26 incidents sharing the title
+"GlobalProtect VPN disconnects immediately", so retrieval has genuine
+near-duplicate documents to get wrong.
+
+**Every article derives from an incident — there are no policy how-to documents.**
+So "how do I reset my password" has no good answer and will look like a retrieval
+failure. Demo questions must be incident-shaped, or a few real policy docs need
+adding.
 
 ## Cost
 
-**Pause the instance after every single session.** An A100 left running
-overnight costs about $36 — more than the entire planned spend. Retained
+**Pause the instance after every single session.** An H100 left running
+overnight is about ₹5,500 — more than the entire planned spend of ~₹4,700. Retained
 storage keeps billing while paused, so tear the filesystem down when the
 session is over.

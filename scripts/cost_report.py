@@ -40,8 +40,16 @@ GPU = os.environ.get("GPU_NAME", "H100-80GB")
 INR_PER_USD = float(os.environ.get("INR_PER_USD", "88.0"))
 
 # A published hosted rate to compare against, USD per million output tokens.
-# Replace with whatever you intend to quote on screen, and say which model.
-HOSTED_COMPARISON = ("a hosted mid-size model", 0.60)
+#
+# Deliberately the SAME model we serve, so nobody can argue the price gap is
+# really a capability gap. Qwen3.8-27B is listed by hosted providers at USD
+# 2.00-3.20 per million output tokens (OpenRouter provider table, checked
+# 2026-09-09). We use the cheapest of those, because it is the hardest bar for
+# self-hosting to clear -- picking an expensive provider would flatter our card.
+#
+# If you quote this on screen, name the provider and the model. The whole
+# self-host-versus-buy verdict is only as good as this one number.
+HOSTED_COMPARISON = ("Qwen3.8-27B hosted, cheapest listed provider", 2.00)
 
 # Swept rather than fixed: cost per token depends almost entirely on how many
 # requests the card is serving at once, so one number would be misleading.
@@ -136,9 +144,7 @@ def main() -> int:
         f"\n  {name}: INR {hosted_usd * INR_PER_USD:.2f} / USD "
         f"{hosted_usd:.2f} per million output tokens"
     )
-    print(
-        "  (a placeholder -- set HOSTED_COMPARISON to a rate you have actually checked)"
-    )
+    print("  (same model we are serving; cheapest listed provider, checked 2026-09-09)")
 
     print("\n--- what the numbers say ---")
     print("  Batching is why self-hosting is viable at all: throughput goes")
@@ -161,8 +167,38 @@ def main() -> int:
         f"\n  At its best this card is {best[4] / hosted_usd:.2f}x the hosted"
         f" rate: {verdict} buying tokens."
     )
-    print("  The honest reasons to self-host are data residency and")
-    print("  predictable cost, not raw price.")
+    print(
+        f"  At its worst ({worst[0]} concurrent) it is "
+        f"{worst[4] / hosted_usd:.2f}x the hosted rate."
+    )
+
+    # The number worth writing on the board: how busy the card has to be
+    # before owning it beats renting the same model by the token.
+    needed = (rate / INR_PER_USD) * 1_000_000 / (hosted_usd * 3600)
+    below = [r for r in rows if r[1] < needed]
+    above = [r for r in rows if r[1] >= needed]
+    print(f"\n  Break-even throughput: {needed:.0f} tokens/sec.")
+    if below and above:
+        lo, hi = below[-1], above[0]
+        span = hi[1] - lo[1]
+        est = lo[0] + (needed - lo[1]) / span * (hi[0] - lo[0]) if span else lo[0]
+        print(
+            f"  That sits between {lo[0]} and {hi[0]} concurrent requests "
+            f"({lo[1]:.0f} and {hi[1]:.0f} tokens/sec)"
+        )
+        print(f"  -- roughly {est:.0f} concurrent, interpolated.")
+        print("  Below that, buy the same model by the token. Above it, own the card.")
+    elif above:
+        print("  Every measured concurrency level already beats the hosted rate.")
+    else:
+        print("  No measured concurrency level beats the hosted rate. Buy, do not build.")
+
+    print("\n  You pay for the GPU whether anyone is asking questions or not, so")
+    print("  utilisation -- not the hourly rate -- is what decides a token's price.")
+    print("  A Stage 3 request makes its model calls sequentially, so one user on")
+    print("  their own is a batch of one and pays the worst row in this table.")
+    print("  The durable reasons to self-host are data residency, control over the")
+    print("  model, and predictable spend -- price only follows if you stay busy.")
     return 0
 
 

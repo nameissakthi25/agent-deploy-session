@@ -59,7 +59,8 @@ lint:
 	ruff check app ui scripts evals tests
 	ruff format --check app ui scripts evals tests
 
-# Rebuild the 42 knowledge-base articles from data/.
+# Rebuild corpus/: 42 articles generated from data/, plus the 8
+# hand-written ones copied from policy/. Deletes corpus/ first.
 corpus:
 	python3 scripts/build_corpus.py
 
