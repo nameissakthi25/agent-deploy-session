@@ -1,6 +1,6 @@
 # Targets used during the session. Everything else is one docker compose up.
 
-.PHONY: up down logs applogs uilogs reload-proxy fetch data corpus toolcheck routecheck cost chat test guardeval index dataset eval smoke lint
+.PHONY: up down logs applogs uilogs reload-proxy ci-secrets fetch data corpus toolcheck routecheck cost chat test guardeval index dataset eval smoke lint
 
 # Bring up the stack. At this point in the build that is the model server only.
 up:
@@ -44,6 +44,11 @@ data:
 # Real model, no stubs. Run after toolcheck passes.
 routecheck:
 	python3 scripts/routing_check.py
+
+# Resume the instance if needed and repoint the CI secrets at its new IP.
+# JarvisLabs reassigns both the machine id and the IP on every resume.
+ci-secrets:
+	scripts/refresh_ci_secrets.sh
 
 # Sweeps concurrency on the real card and does the cost-per-token
 # arithmetic. This is the 0:04 segment, measured rather than quoted.
