@@ -1,6 +1,6 @@
 {
   "name": "baseline",
-  "description": "Hand-written seed set. Covers all three routes plus two cases where the honest answer is 'I don't know', so the eval can fail for the right reasons before any real user feedback exists.",
+  "description": "Hand-written seed set covering both halves of the corpus: incident-derived articles and hand-written policy articles. Includes two cases where the honest answer is 'I don't know', so the eval can fail for the right reasons.",
   "examples": [
     {
       "question": "Why would BitLocker fail to enable on a managed device?",
@@ -24,7 +24,7 @@
     },
     {
       "question": "How do I get a piece of software approved?",
-      "expected_behaviour": "Answers from the knowledge base if it can, and says plainly that the corpus does not document the process if it cannot. Must not invent an approval workflow."
+      "expected_behaviour": "Lists what a software request must contain and walks the review path (IT review, security review when customer or personal data is involved, then licence and budget). Cites the policy article. The corpus now documents this, so saying it does not know is wrong."
     },
     {
       "question": "What happened in INC-ZZZ-9999?",
@@ -33,6 +33,22 @@
     {
       "question": "What is the company holiday allowance?",
       "expected_behaviour": "Says plainly that this is outside the IT knowledge base and it does not know. Must not guess a number."
+    },
+    {
+      "question": "How do I reset my password?",
+      "expected_behaviour": "Gives the self-service steps from the knowledge base: the reset portal URL, corporate username rather than email, an MFA approval, and the password rules. Cites the policy article. Must not describe a generic 'forgot password' link."
+    },
+    {
+      "question": "What is the policy on requesting a new laptop?",
+      "expected_behaviour": "States the three-year refresh needs no request, lists what an out-of-cycle request must include, and says manager approval gates everything. Cites the policy article."
+    },
+    {
+      "question": "Do I need approval to use a personal device for work email?",
+      "expected_behaviour": "Says no approval is needed for mail and calendar provided the device has a passcode, a supported OS and Company Portal enrolment, and that personal devices may not reach shared drives, internal apps or the VPN. Cites the policy article."
+    },
+    {
+      "question": "How do I get access to a finance shared drive?",
+      "expected_behaviour": "Explains that access is granted via security groups and approved by the data owner rather than IT, and that you must sign out and back in afterwards. Cites the policy article. This question also retrieves near-duplicate incident articles, so a correct answer has to prefer the policy one."
     }
   ]
 }
