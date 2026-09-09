@@ -5,7 +5,7 @@ startup -- there are no branches or tags for the three stages, and the only
 difference between what runs on 8101, 8102 and 8103 is that variable.
 """
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 from fastapi import FastAPI, HTTPException
 from opentelemetry.trace import Status, StatusCode
@@ -59,16 +59,35 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=f"IT support assistant - stage {STAGE}", lifespan=lifespan)
 
 
-def record_rejection(span, guard: str, reason: str) -> None:
-    """Put a guardrail rejection in the trace, with the reason readable.
+@contextmanager
+def guard_span(name: str):
+    """Run one guardrail inside its own span, pass or fail.
 
-    The guards themselves stay pure functions with no tracing in them -- they
-    raise, and the span is recorded here, in one visible place. That is what
-    lets the fast tests exercise them without any OpenTelemetry setup.
+    Every invocation gets a span, not just the refusals. Before this, a
+    request that passed all three guards produced a trace with no evidence
+    the guards existed -- which made "guardrails are part of the recorded
+    history" true only when something went wrong.
+
+    The durations are the point. input_guard is regex and lands in
+    microseconds; output_guard spends a whole model call and lands in the
+    hundreds of milliseconds. Those two numbers side by side are the argument
+    for doing cheap checks first, and a span is the only one of the available
+    options that carries a duration.
+
+    The guards themselves stay pure functions with no tracing in them. They
+    raise; this records. That is what lets the fast tests exercise them with
+    no OpenTelemetry setup at all.
     """
-    span.set_attribute("guardrail.rejected_by", guard)
-    span.set_attribute("guardrail.reason", reason)
-    span.set_status(Status(StatusCode.ERROR, f"{guard}: {reason}"))
+    with _tracer.start_as_current_span(name) as span:
+        span.set_attribute("guardrail.name", name)
+        try:
+            yield span
+        except (InputRejected, OutputRejected) as error:
+            span.set_attribute("guardrail.passed", False)
+            span.set_attribute("guardrail.reason", error.reason)
+            span.set_status(Status(StatusCode.ERROR, f"{name}: {error.reason}"))
+            raise
+        span.set_attribute("guardrail.passed", True)
 
 
 @app.get("/health")
@@ -98,9 +117,9 @@ def post_chat(request: ChatRequest) -> ChatResponse:
 
         # Guard 1: before anything reaches the model.
         try:
-            message = check_input(request.message)
+            with guard_span("input_guard"):
+                message = check_input(request.message)
         except InputRejected as error:
-            record_rejection(span, "input_guard", error.reason)
             raise HTTPException(status_code=400, detail=error.reason) from error
 
         span.set_attribute("session_id", request.session_id)
@@ -118,11 +137,11 @@ def post_chat(request: ChatRequest) -> ChatResponse:
         # Guard 3: before anything reaches the user. Guard 2 is the tool guard,
         # which runs inside the Stage 3 graph rather than here.
         try:
-            response = check_output(_client, answer, STAGE, trace_id, message)
+            with guard_span("output_guard"):
+                response = check_output(_client, answer, STAGE, trace_id, message)
             span.set_attribute("output.value", response.answer)
             return response
         except OutputRejected as error:
-            record_rejection(span, "output_guard", error.reason)
             raise HTTPException(status_code=422, detail=error.reason) from error
 
 

@@ -6,6 +6,7 @@ arriving here were written by a model, not a person, and nobody reviewed them.
 """
 
 import json
+from contextlib import contextmanager
 
 from openai import OpenAI
 from opentelemetry import trace
@@ -21,18 +22,37 @@ AGENT_NAME = "tool_agent"
 _tracer = trace.get_tracer(__name__)
 
 
-def record_rejection(agent: str, tool: str, reason: str) -> None:
-    """Put a tool-guard rejection in the trace as its own span.
+@contextmanager
+def tool_guard_span(agent: str, tool: str):
+    """One span per tool call the guard inspects, allowed or refused.
 
-    A span rather than an attribute on the parent, so a rejected call is
-    visible in the trace tree at a glance and can be clicked into -- which is
-    how it gets debugged on stage without opening a log file.
+    Every call gets a span, not only the refusals -- otherwise a Stage 3 trace
+    where everything worked shows no sign the allowlist was ever consulted.
+    A refused call is marked ERROR and carries the reason, so it stands out in
+    the tree and can be clicked into rather than grepped for.
     """
-    with _tracer.start_as_current_span("tool_guard_rejected") as span:
-        span.set_attribute("guardrail.rejected_by", "tool_guard")
-        span.set_attribute("guardrail.reason", reason)
+    with _tracer.start_as_current_span("tool_guard") as span:
+        span.set_attribute("guardrail.name", "tool_guard")
         span.set_attribute("guardrail.agent", agent)
         span.set_attribute("guardrail.tool", tool)
+        try:
+            yield span
+        except ToolCallRejected as error:
+            span.set_attribute("guardrail.passed", False)
+            span.set_attribute("guardrail.reason", error.reason)
+            span.set_status(Status(StatusCode.ERROR, f"tool_guard: {error.reason}"))
+            raise
+        span.set_attribute("guardrail.passed", True)
+
+
+def record_json_failure(agent: str, tool: str, reason: str) -> None:
+    """Arguments that were not even JSON never reach the guard."""
+    with _tracer.start_as_current_span("tool_guard") as span:
+        span.set_attribute("guardrail.name", "tool_guard")
+        span.set_attribute("guardrail.agent", agent)
+        span.set_attribute("guardrail.tool", tool)
+        span.set_attribute("guardrail.passed", False)
+        span.set_attribute("guardrail.reason", reason)
         span.set_status(Status(StatusCode.ERROR, f"tool_guard: {reason}"))
 
 
@@ -72,16 +92,16 @@ def run(client: OpenAI, message: str) -> list[dict]:
             raw = json.loads(call.function.arguments)
         except json.JSONDecodeError as error:
             reason = f"arguments were not JSON: {error}"
-            record_rejection(AGENT_NAME, name, reason)
+            record_json_failure(AGENT_NAME, name, reason)
             results.append({"tool": name, "rejected": reason})
             continue
 
         try:
-            arguments = check_tool_call(AGENT_NAME, name, raw)
+            with tool_guard_span(AGENT_NAME, name):
+                arguments = check_tool_call(AGENT_NAME, name, raw)
         except ToolCallRejected as error:
             # The run continues. A rejected tool call is not a crash -- the
             # synthesizer is told the call was refused and answers accordingly.
-            record_rejection(error.agent, error.tool, error.reason)
             results.append({"tool": name, "rejected": error.reason})
             continue
 

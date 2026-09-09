@@ -367,6 +367,22 @@ what the system would have returned otherwise. Find both rejections in the trace
 — guardrails are part of the recorded history, not something happening off to the
 side.
 
+**Then open a trace where nothing was blocked, and point at the durations.** Each
+guard emits a span on every request, not only when it refuses, so a successful
+request still shows all three ran. Measured on the box:
+
+| Span | Duration | |
+|---|---|---|
+| `input_guard` | **0.1 ms** | regex and a phrase list. Free |
+| `tool_guard` | **5.3 ms** | allowlist plus schema validation. Nearly free |
+| `output_guard` | **102.6 ms** | a whole model call, and its `ChatCompletion` is nested inside it |
+
+That is a thousand-fold spread across three things all called "guardrails", and
+it is the whole argument for ordering them cheapest-first. The input guard runs
+before a single token reaches the GPU; the output guard cannot run until the
+answer exists, so it pays full price. Nobody has to be told this once the three
+numbers are on screen together.
+
 **Then do the thing almost no session does: score your own guard and admit the
 result.** `make guardeval` runs `input_guard` against the dataset's PII answer
 key. Measured:

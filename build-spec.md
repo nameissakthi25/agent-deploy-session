@@ -224,7 +224,11 @@ The build is done when all of these pass. Check them in order.
 **Stage 1**
 - [ ] `POST /v1/chat` returns an answer and a trace ID
 - [ ] Restarting `chat-v1` loses conversation state, visibly
-- [ ] One trace appears in Phoenix with three spans or fewer
+- [x] One trace appears in Phoenix, small enough to read at a glance.
+      Now **five** spans, not three: the guardrails emit a span per
+      invocation rather than only on refusal, so a request that passes
+      still shows they ran. The original three-span target predates the
+      output guard's judge call.
 
 **Stage 2**
 - [ ] `POST /v2/chat` returns an answer grounded in the corpus
