@@ -1,0 +1,10 @@
+# Split across files so each stays readable on screen. Compose merges them
+# and `docker compose config` shows the single resolved stack.
+#
+# YAML anchors do not cross file boundaries, so the shared application
+# settings live in compose.apps.yaml beside the services that use them.
+
+include:
+  - compose.model.yaml
+  - compose.data.yaml
+  - compose.apps.yaml

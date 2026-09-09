@@ -1,0 +1,185 @@
+# Build and deploy pipeline.
+#
+# Twice during the session, Stage 1 and Stage 2 are deployed by typing a
+# command into a box someone was already logged into. That is how a demo
+# ships: it depends on one person's shell history, nothing checked it before
+# it went out, and if it breaks there is no way back. This file is the
+# alternative -- Stage 3 gets deployed by pushing a commit.
+
+name: deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  # Tagged with the exact commit, never "latest". A deploy you cannot name
+  # is a deploy you cannot roll back.
+  IMAGE: ghcr.io/${{ github.repository }}/chat-app
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Runs on every pull request and every push. Under twenty seconds, because
+  # everything in it is predictable: guardrails, schemas, and routing against
+  # a stubbed model client. No GPU, no network, no model.
+  # ---------------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff==0.16.6
+
+      - name: Lint
+        run: |
+          ruff check app ui scripts evals tests
+          ruff format --check app ui scripts evals tests
+
+      - name: Fast tests
+        # If this takes more than a few seconds something has started making
+        # real model calls, which defeats the purpose of the suite.
+        run: pytest tests/ -q --durations=5
+
+  # ---------------------------------------------------------------------------
+  # Only on main. Builds the one image all three stages run from and tags it
+  # with the commit SHA.
+  # ---------------------------------------------------------------------------
+  build:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # A short-lived token issued per run, scoped to this repository. Note
+      # the contrast with the deploy job below, which cannot do this.
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.app
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:main
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # Pulls the new image on the GPU instance, restarts ONE service, then
+  # verifies. Restarting chat-agents only is deliberate: Stage 1 and Stage 2
+  # keep serving while Stage 3 rolls.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: gpu-instance
+    steps:
+      # === READ THIS OUT LOUD DURING THE SESSION ===========================
+      #
+      # This job authenticates with a LONG-LIVED SSH PRIVATE KEY stored in
+      # the repository's secrets. That is a real weakness, not good practice:
+      #
+      #   - it does not expire, so it is valid until someone remembers to
+      #     rotate it
+      #   - anyone who can push a workflow to this repo can use it
+      #   - it grants shell access to the box, not permission to do one thing
+      #   - there is no per-run audit trail tying a deploy to a person
+      #
+      # The build job above shows the alternative: secrets.GITHUB_TOKEN is
+      # minted per run, scoped to one repository, and expires when the job
+      # ends. On a managed cloud the deploy step would work the same way --
+      # a short-lived token issued per run, with no permanent credential
+      # stored anywhere. We do not have that here because we are deploying
+      # to a box we rented, over SSH, and SSH has no concept of a
+      # ten-minute credential.
+      #
+      # Present this as the honest cost of owning the whole stack.
+      # =====================================================================
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GPU_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned host key rather than StrictHostKeyChecking=no, so a
+          # man-in-the-middle cannot quietly collect the key above.
+          echo "${{ secrets.GPU_HOST_KEY }}" > ~/.ssh/known_hosts
+
+      - name: Pull the new image and restart chat-agents
+        env:
+          HOST: ${{ secrets.GPU_HOST }}
+          USER_NAME: ${{ secrets.GPU_USER }}
+          SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$USER_NAME@$HOST" bash -euo pipefail <<EOF
+            cd ~/agent-deploy-session
+            docker pull ${{ env.IMAGE }}:$SHA
+            # Point the service at this exact build, then restart only it.
+            CHAT_APP_IMAGE=${{ env.IMAGE }}:$SHA \
+              docker compose up -d --no-deps chat-agents
+            docker compose ps chat-agents
+          EOF
+
+      # Step 4 is a restart, which means a few seconds of downtime and no way
+      # back except redeploying the previous image. Weighted routing in the
+      # proxy would give you a canary instead. We did not build that -- it is
+      # explained on the whiteboard at 1:44 rather than implemented.
+      - name: Smoke test
+        env:
+          GATEWAY_URL: http://${{ secrets.GPU_HOST }}
+        run: python scripts/smoke_test.py
+
+  # ---------------------------------------------------------------------------
+  # The release gate. Scores the deployed Stage 3 against a dataset and fails
+  # the job below threshold. This is where a user's thumbs-down becomes the
+  # thing that blocks a bad release.
+  # ---------------------------------------------------------------------------
+  eval:
+    needs: deploy
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: gpu-instance
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Score the deployed pipeline
+        env:
+          GATEWAY_URL: http://${{ secrets.GPU_HOST }}
+          VLLM_BASE_URL: http://${{ secrets.GPU_HOST }}:8000/v1
+          MODEL_NAME: qwen3
+        # Exits non-zero below the threshold in evals/run_eval.py, which
+        # fails this job and marks the deploy bad.
+        run: python evals/run_eval.py

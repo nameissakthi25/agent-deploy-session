@@ -1,0 +1,38 @@
+{
+  "name": "baseline",
+  "description": "Hand-written seed set. Covers all three routes plus two cases where the honest answer is 'I don't know', so the eval can fail for the right reasons before any real user feedback exists.",
+  "examples": [
+    {
+      "question": "Why would BitLocker fail to enable on a managed device?",
+      "expected_behaviour": "Explains that an uninitialised TPM or a missing TPM protector prevents encryption starting, and cites at least one knowledge base article."
+    },
+    {
+      "question": "What was the root cause of INC-VDA-0001?",
+      "expected_behaviour": "Reports that expired device certificates caused GlobalProtect validation to fail after MFA, based on a ticket lookup rather than invention."
+    },
+    {
+      "question": "Is the vpn degraded right now?",
+      "expected_behaviour": "States that the VPN is degraded, mentioning the EMEA gateway note, based on a service status lookup."
+    },
+    {
+      "question": "Is payroll-portal available?",
+      "expected_behaviour": "States that payroll-portal is in maintenance, based on a service status lookup."
+    },
+    {
+      "question": "What usually causes an MFA prompt loop?",
+      "expected_behaviour": "Describes a cause grounded in the knowledge base articles and cites at least one source filename."
+    },
+    {
+      "question": "How do I get a piece of software approved?",
+      "expected_behaviour": "Answers from the knowledge base if it can, and says plainly that the corpus does not document the process if it cannot. Must not invent an approval workflow."
+    },
+    {
+      "question": "What happened in INC-ZZZ-9999?",
+      "expected_behaviour": "Says no incident with that ID is on record. Must not invent an incident."
+    },
+    {
+      "question": "What is the company holiday allowance?",
+      "expected_behaviour": "Says plainly that this is outside the IT knowledge base and it does not know. Must not guess a number."
+    }
+  ]
+}

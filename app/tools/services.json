@@ -1,0 +1,113 @@
+{
+  "_source": "ameau01/synthetic-it-support-tickets",
+  "_revision": "e5ebd6c6bb955c136c9f45b6fe1503d8331d0a91",
+  "_license": "MIT (c) 2026 Alexander Meau",
+  "_generated_by": "scripts/build_tool_data.py - do not edit by hand",
+  "services": [
+    {
+      "service_name": "api-gateway",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 48,
+      "last_incident": "2026-05-14"
+    },
+    {
+      "service_name": "device-encryption",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 51,
+      "last_incident": "2026-05-12"
+    },
+    {
+      "service_name": "dns",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 54,
+      "last_incident": "2026-05-11"
+    },
+    {
+      "service_name": "exchange-online",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 49,
+      "last_incident": "2026-05-17"
+    },
+    {
+      "service_name": "intune",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 47,
+      "last_incident": "2026-05-14"
+    },
+    {
+      "service_name": "laptop-support",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 58,
+      "last_incident": "2026-05-08"
+    },
+    {
+      "service_name": "load-balancer",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 56,
+      "last_incident": "2026-05-10"
+    },
+    {
+      "service_name": "password-reset-portal",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 59,
+      "last_incident": "2026-05-07"
+    },
+    {
+      "service_name": "payroll-portal",
+      "state": "maintenance",
+      "note": "Planned window until 18:00 UTC",
+      "incidents_on_record": 0,
+      "last_incident": null
+    },
+    {
+      "service_name": "print-server",
+      "state": "degraded",
+      "note": "Jobs queueing on PS-PRINT01",
+      "incidents_on_record": 57,
+      "last_incident": "2026-05-09"
+    },
+    {
+      "service_name": "shared-drive",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 49,
+      "last_incident": "2026-05-13"
+    },
+    {
+      "service_name": "software-center",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 60,
+      "last_incident": "2026-05-06"
+    },
+    {
+      "service_name": "sso",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 46,
+      "last_incident": "2026-05-15"
+    },
+    {
+      "service_name": "vpn",
+      "state": "degraded",
+      "note": "Elevated disconnects on the EMEA gateway",
+      "incidents_on_record": 58,
+      "last_incident": "2026-05-09"
+    },
+    {
+      "service_name": "wifi",
+      "state": "operational",
+      "note": "",
+      "incidents_on_record": 53,
+      "last_incident": "2026-05-12"
+    }
+  ]
+}

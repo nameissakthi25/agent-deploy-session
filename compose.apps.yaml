@@ -1,0 +1,160 @@
+# Step 1 of the build order: the model layer, and nothing else.
+# Bring this up on its own and confirm the model answers a curl request
+# before adding any application service.
+#
+# Every non-obvious flag below carries a comment, because this file gets
+# shown on screen during the session.
+
+# All three application stages come from ONE image. A STAGE environment
+# variable decides which graph gets built at startup -- there are no branches
+# or tags for the three stages, and these anchors are why you can see that:
+# the shared settings live here once, so the per-service blocks below contain
+# only what genuinely differs.
+#
+# Compose extension fields must be top level, which is also where they are
+# easiest to read from the back of a room.
+
+x-app: &app
+  # Both image and build on purpose. Locally, `docker compose up --build`
+  # builds and tags it with the name below. In CI the deploy step sets
+  # CHAT_APP_IMAGE to a registry tag pinned to the commit SHA, and `up`
+  # then uses that pulled image instead of building anything on the box.
+  image: ${CHAT_APP_IMAGE:-agent-deploy-session/chat-app:local}
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.app
+  restart: unless-stopped
+
+x-app-env: &app-env
+  VLLM_BASE_URL: http://vllm:8000/v1
+  MODEL_NAME: qwen3
+  PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006/v1/traces
+
+# Stages 2 and 3 retrieve, so they also get a vector database connection
+# string. A connection string, not a path -- the app does not know or care
+# where the index physically lives.
+x-retrieval-env: &retrieval-env
+  QDRANT_URL: http://qdrant:6333
+  QDRANT_COLLECTION: it-kb
+
+# Without service_healthy the apps start before the weights finish loading,
+# fail their startup reachability check, and restart-loop.
+x-needs-model: &needs-model
+  vllm:
+    condition: service_healthy
+  phoenix:
+    condition: service_healthy
+
+x-needs-model-and-index: &needs-model-and-index
+  vllm:
+    condition: service_healthy
+  phoenix:
+    condition: service_healthy
+  qdrant:
+    condition: service_healthy
+
+services:
+  # step 3 -- stage 1, the plain chatbot. No retrieval, no tools, no memory.
+  chat-v1:
+    <<: *app
+    container_name: chat-v1
+    environment:
+      <<: *app-env
+      STAGE: "1"
+      APP_PORT: "8101"
+    depends_on: *needs-model
+    # Not published to the host: Caddy is the only way in. Ask the room who
+    # can reach port 8000 by comparison -- the model server has no such cover.
+    expose:
+      - "8101"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8101/health').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # step 6 -- stage 2, RAG.
+  chat-rag:
+    <<: *app
+    container_name: chat-rag
+    environment:
+      <<: [*app-env, *retrieval-env]
+      STAGE: "2"
+      APP_PORT: "8102"
+    depends_on: *needs-model-and-index
+    expose:
+      - "8102"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8102/health').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # step 7 -- stage 3, the supervisor and its three workers.
+  chat-agents:
+    <<: *app
+    container_name: chat-agents
+    environment:
+      <<: [*app-env, *retrieval-env]
+      STAGE: "3"
+      APP_PORT: "8103"
+    depends_on: *needs-model-and-index
+    expose:
+      - "8103"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8103/health').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # --- step 8: the UI --------------------------------------------------------
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    container_name: ui
+    restart: unless-stopped
+    environment:
+      # The UI talks to the stages through Caddy, the same path the room uses.
+      GATEWAY_URL: http://caddy:80
+      # Phoenix as the viewer's BROWSER reaches it, for the clickable link --
+      # not as this container reaches it.
+      PHOENIX_PUBLIC_URL: /traces
+    depends_on:
+      - chat-v1
+      - chat-rag
+      - chat-agents
+    expose:
+      - "8501"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - chat-v1
+      - chat-rag
+      - chat-agents
+      - phoenix
+      - ui

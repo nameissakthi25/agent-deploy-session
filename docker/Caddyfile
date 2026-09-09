@@ -1,0 +1,41 @@
+# Reverse proxy for everything the room can reach.
+#
+# Routes are added here as each stage lands, because Caddy resolves its
+# upstreams at startup and a route pointing at a service that does not exist
+# yet stops the whole proxy from coming up.
+#
+#   /v1/*   -> chat-v1:8101      stage 1, plain chatbot     [live]
+#   /v2/*   -> chat-rag:8102     stage 2, RAG               [live]
+#   /v3/*   -> chat-agents:8103  stage 3, multi-agent       [live]
+#   /traces -> phoenix:6006      tracing UI                 [live]
+#   /       -> ui:8501           Streamlit                  [live]
+
+:80 {
+	# strip_prefix so the app itself only ever defines /chat and /health.
+	# The stage lives in the URL, not in the application code.
+	handle_path /v1/* {
+		reverse_proxy chat-v1:8101
+	}
+
+	handle_path /v2/* {
+		reverse_proxy chat-rag:8102
+	}
+
+	handle_path /v3/* {
+		reverse_proxy chat-agents:8103
+	}
+
+	# Phoenix serves its whole UI from the root, so this rewrites rather than
+	# stripping: /traces lands on the Phoenix home page and its own asset
+	# paths still resolve.
+	handle /traces* {
+		rewrite * /
+		reverse_proxy phoenix:6006
+	}
+
+	# Everything else is the UI. Streamlit needs its websocket upgrade
+	# passed through, which reverse_proxy handles by default.
+	handle {
+		reverse_proxy ui:8501
+	}
+}

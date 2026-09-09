@@ -1,0 +1,5 @@
+# The UI needs only these two. It talks to the app over HTTP and does not
+# import the model client, the graph, or the retriever -- which is why the UI
+# image builds in seconds and stays small.
+streamlit==1.63.0
+httpx==0.28.1

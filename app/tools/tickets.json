@@ -1,0 +1,462 @@
+{
+  "_source": "ameau01/synthetic-it-support-tickets",
+  "_revision": "e5ebd6c6bb955c136c9f45b6fe1503d8331d0a91",
+  "_license": "MIT (c) 2026 Alexander Meau",
+  "_generated_by": "scripts/build_tool_data.py - do not edit by hand",
+  "tickets": [
+    {
+      "ticket_id": "INC-AIT-0001",
+      "subject": "Integration Gateway API timeouts causing delayed data sync",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2025-12-01",
+      "service": "api-gateway",
+      "root_cause": "An expired downstream API token was left in use after the automated token rotation job failed. The Integration Gateway could no longer complete authenticated calls, which manifested as repeated timeout behavior during batch sync processing and delayed customer data updates.",
+      "resolution_steps": [
+        "Validated the downstream API authentication path for service account <USER> and manually rotated the expired API token on the Integration Gateway (INTGW-WEST-01.corplabs.internal) via the admin console to restore successful authenticated requests to api.customersync.corplabs.com. Rotation performed by <PERSON> (<USER>) at 21:02 UTC.",
+        "Restarted the gateway worker process on INTGW-WEST-01.corplabs.internal (PID 28417) to clear any stale authentication cache and ensure the new token was actively used by batch sync jobs. Post-restart, confirmed HTTP 200 responses with avg latency of 280ms on downstream calls.",
+        "Applied temporary retry and exponential backoff tuning on the Integration Gateway (max_retries: 5, initial_backoff: 2s, backoff_multiplier: 2.0) to reduce immediate job failures while authentication was being stabilized. Configuration change deployed by <PERSON> (<USER>, Platform Engineering, <LOCATION> office).",
+        "Corrected the failed automated token rotation job (tknrot-20251201-0130) by updating the rotation script's credential store path and added pre-expiry validation checks so future rotations confirm token acceptance at least 24 hours before the previous credential expires. Fix committed by <USER> and reviewed by <PERSON>.",
+        "Added alerting and dashboard visibility for token rotation failures via the Monitoring System (alert rule: TOKEN_ROTATION_FAIL, notify: <EMAIL>, <EMAIL>) and post-change monitoring confirmed API success rates returned to 99.97% and sync latency returned to normal levels (p95: 1.2s) within 30 minutes of remediation."
+      ]
+    },
+    {
+      "ticket_id": "INC-AIT-0002",
+      "subject": "Integration Gateway API timeouts",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2025-12-02",
+      "service": "api-gateway",
+      "root_cause": "The Integration Gateway service account token expired, causing 401 Unauthorized token_expired responses from the external API. The gateway continued retrying failed authentication attempts until jobs exhausted retries and surfaced as 504 timeouts, which created a processing backlog for scheduled syncs.",
+      "resolution_steps": [
+        "Validated that the external CRM API itself was healthy via Monitoring System synthetic probes and direct latency checks from <IP>, and confirmed the primary failure pattern was authentication-related 401 token_expired responses for service account <USER> rather than a downstream service outage.",
+        "Rotated the expired Integration Gateway service account token for <USER> via Vault (new token issued 2025-12-02T02:48:00Z) and updated the active secret used by the gateway worker pods igw-worker-01 through igw-worker-04 for outbound API authentication.",
+        "Restarted the Integration Gateway worker pods (igw-worker-01 through igw-worker-04) on node <IP> so they would load the new <USER> token and clear stuck retry state from previously failed sync attempts. Restart completed by 02:52 UTC.",
+        "Verified successful authenticated API calls after the token update by reviewing gateway response logs, and monitored backlog processing with <PERSON> until the 1,450+ delayed sync jobs drained normally by approximately 03:40 UTC.",
+        "Added token-expiry alerting in Monitoring System to notify the backend-syncers group (<EMAIL>, <EMAIL>) 14 days before TTL expiration, scheduled automatic token rotation at 60-day intervals for <USER>, then adjusted retry and backoff behavior (max retries reduced to 3, exponential backoff ceiling set to 30s) to reduce cascading timeout conditions if authentication fails again."
+      ]
+    },
+    {
+      "ticket_id": "INC-ALP-0001",
+      "subject": "AD account locked after password reset",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2025-11-18",
+      "service": "password-reset-portal",
+      "root_cause": "Cached credentials on the user's iPhone continued submitting the old password after the reset, generating repeated failed authentications against Active Directory and triggering the account lockout policy before the new password could be used successfully in SSO.",
+      "resolution_steps": [
+        "Reviewed Active Directory lockout evidence on DC-EAST-03.corplabs.internal for account CN=<USER>,OU=Corp Users,DC=corplabs,DC=internal, verified Event ID 4740 with lockout status 0xC0000234 showing 14 failed attempts from IP <IP>, and unlocked <PERSON>'s AD account using the Active Directory Users and Computers console.",
+        "Issued a fresh password reset token to <EMAIL> and confirmed the user (<USER>, <EMP_ID>) successfully completed the password reset flow in the Password Reset Portal at 08:06 UTC with propagation verified across domain controllers.",
+        "Guided <PERSON> to remove and re-add the corporate account on her iPhone (<HOSTNAME>) and clear saved browser credentials in Safari so the old password would no longer be retried by iOS Mail or the browser against Active Directory.",
+        "Revoked stale SSO sessions and tokens associated with <USER>'s prior sign-in state on the SSO Portal at https://sso.corplabs.com to ensure all subsequent authentication used the new password exclusively.",
+        "Validated successful sign-in to the SSO Portal for <USER> at 08:14 UTC from IP <IP> after mobile credential cleanup and documented <HOSTNAME> as the lockout source in the incident record for follow-up monitoring by <PERSON> on the identity team."
+      ]
+    },
+    {
+      "ticket_id": "INC-ALP-0002",
+      "subject": "Account locked again after password reset",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2025-11-18",
+      "service": "password-reset-portal",
+      "root_cause": "Stale cached credentials on the user's iOS mobile device continued submitting the old password to Active Directory and SSO-connected services after the self-service password reset, repeatedly triggering the AD lockout policy.",
+      "resolution_steps": [
+        "Reviewed account lockout activity for <USER> (<PERSON>, <EMP_ID>) on DC-EAST-03.corplabs.internal and confirmed repeated failed authentication attempts were originating from the user's mobile device (<HOSTNAME>, IP <IP>) after the password reset.",
+        "Unlocked the user's Active Directory account (CN=<USER>,OU=Corp Users,DC=corplabs,DC=internal) so access could be restored after the repeated lockout events triggered by the mobile device.",
+        "Issued a new password reset token via the Password Reset Portal and completed a fresh password reset to ensure the current credential was valid in directory-backed services including Active Directory and SSO Portal for <USER>.",
+        "Instructed the user to remove the corporate account from the mobile device (<HOSTNAME>), clear saved credentials in mobile mail and collaboration apps, and re-add the account using the new password. <PERSON> confirmed completion of these steps at 15:25 UTC.",
+        "Invalidated existing SSO sessions at https://sso.corplabs.com and revoked prior authentication tokens for <USER> to stop stale sessions from retrying with old credentials across all SSO-connected services.",
+        "Confirmed successful sign-in from both <HOSTNAME> and <HOSTNAME> after mobile reconfiguration and monitored for additional failed authentication attempts from IP <IP> to verify lockouts had stopped. No further incidents observed through end of business day."
+      ]
+    },
+    {
+      "ticket_id": "INC-CES-0001",
+      "subject": "Expired TLS certificate and incomplete load balancer chain update caused internal TLS",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2025-12-12",
+      "service": "load-balancer",
+      "root_cause": "The service certificate was renewed at the Certificate Authority, but the full renewed certificate chain was not correctly applied on the F5 load balancer. As a result, the load balancer continued serving the old expired chain to clients even though application-side renewal activity had been performed.",
+      "resolution_steps": [
+        "Retrieved the renewed server certificate and complete intermediate chain from the internal Certificate Authority and verified the certificate matched the Internal Web Service endpoint naming requirements (CN=internal-ws.corplabs.com, SAN: internal-ws.corplabs.com). Verification performed by <PERSON>.",
+        "Uploaded the renewed certificate bundle to the F5 load balancer (lb-east-01.corplabs.internal) and explicitly updated the virtual server configuration to use the new full chain instead of the previously served expired chain, correcting the gap left by the earlier incomplete deployment.",
+        "Applied the load balancer configuration and reloaded the LB service on lb-east-01.corplabs.internal so the updated certificate chain was actively presented to clients in the <LOCATION> office and all us-east-1 internal-services users.",
+        "Validated the served certificate chain from client and load balancer perspectives \u2014 confirmed from <HOSTNAME> (<IP>) and additional test hosts that the expired certificate was no longer presented and TLS handshakes completed successfully for the Internal Web Service and Service API. <PERSON> (<USER>) confirmed normal access restored.",
+        "Restored certificate monitoring and added load balancer chain verification plus deployment evidence requirements (including post-deployment client-side validation step) to the certificate rotation process to prevent recurrence. Alert subscription updated for <EMAIL> and <EMAIL>."
+      ]
+    },
+    {
+      "ticket_id": "INC-CES-0002",
+      "subject": "Expired TLS certificate on Internal Web Service behind Load Balancer",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2025-12-12",
+      "service": "load-balancer",
+      "root_cause": "The svc-internal certificate presented by the load balancer expired, and the load balancer configuration was not updated with the renewed intermediate certificate. Certificate monitoring and renewal alerting also failed to notify before expiration, allowing the invalid chain to remain in production.",
+      "resolution_steps": [
+        "Renew the svc-internal TLS certificate (CN=svc-internal.corplabs.internal) with the internal Certificate Authority CA-EAST-01 and verify the renewed certificate matches the service endpoint name and SAN entries. Renewal performed by <PERSON> (<USER>, <EMP_ID>).",
+        "Deploy the renewed server certificate and the full trusted chain, including the renewed CorpLabs Internal Intermediate CA G2 certificate, to load balancer LB-EAST-02 serving svc-internal. Deployment coordinated by <PERSON> (<USER>).",
+        "Remove the temporary self-signed certificate workaround from LB-EAST-02 listener configuration and update the load balancer certificate chain configuration so clients receive the correct full chain (root \u2192 intermediate \u2192 leaf) for svc-internal.corplabs.internal.",
+        "Validate from a client perspective that load balancer LB-EAST-02 now presents a non-expired certificate (new expiry 2026-12-10) and a complete chain, and confirm TLS handshakes succeed for dependent internal services. Verification performed from <HOSTNAME> (<IP>) and <HOSTNAME> (<IP>) in the <LOCATION> office.",
+        "Restore certificate renewal monitoring and alerting on CA-EAST-01 for svc-internal.corplabs.internal, re-enable the 30-day expiry alert rule, configure notifications to <EMAIL> and <EMAIL>, then test that certificate expiration warnings and renewal job failures generate notifications before the next renewal window."
+      ]
+    },
+    {
+      "ticket_id": "INC-DCP-0001",
+      "subject": "Device marked Noncompliant (missing encryption) \u2014 Conditional Access blocks access",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2025-12-25",
+      "service": "intune",
+      "root_cause": "The device missed a recent Intune compliance check-in and did not report its BitLocker/encryption state. Because the compliance policy required device encryption, the missing encryption signal caused Intune to evaluate the device as Noncompliant, which then triggered Conditional Access to block Exchange Online access.",
+      "resolution_steps": [
+        "Reviewed the assigned Intune compliance policy CP-ENC-0042 and confirmed the device <HOSTNAME> was targeted by the policy requiring device encryption via the 'Marketing-Devices-US' Azure AD group assignment.",
+        "Applied BitLocker enforcement through the Intune MDM configuration profile and confirmed the encryption policy assignment to the device's group. Verified that the configuration profile version matched the latest revision pushed on 2025-12-23.",
+        "Initiated a remote sync and forced a device check-in from the Intune console (triggered by agent <PERSON>) so the endpoint <HOSTNAME> could submit current compliance data including BitLocker volume encryption status.",
+        "Verified the device reported a valid encryption/BitLocker status (volume C: encrypted, AES-XTS 256-bit) during the refreshed check-in at 2025-12-25T13:32:00Z and that compliance evaluation re-ran successfully for user <USER>.",
+        "Confirmed the device state changed from Noncompliant to Compliant in Intune and validated that Conditional Access once again allowed Exchange Online access for <EMAIL>. <PERSON> confirmed she could sign in to Exchange Online without the compliance block page."
+      ]
+    },
+    {
+      "ticket_id": "INC-DCP-0002",
+      "subject": "Mobile device marked Not Compliant (stale check-in / missing encryption signal) \u2014",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2025-12-25",
+      "service": "intune",
+      "root_cause": "The device compliance state became stale after the Android device stopped checking in to Intune for 14 days, which prevented the required encryption signal from being refreshed and caused Conditional Access to continue treating the device as noncompliant.",
+      "resolution_steps": [
+        "Confirmed the device record for <HOSTNAME> in Intune (enrolled under <USER>, <EMP_ID>) had an outdated check-in timestamp of 2025-12-11T08:42Z and that the failing compliance condition was the missing encryption signal rather than an OS version or access assignment issue.",
+        "Triggered a remote sync from the Intune admin console targeting <HOSTNAME> and had the user (<PERSON>) open Company Portal on the handset to force the device to complete a fresh management check-in. The device reconnected from IP <IP> at the <LOCATION> office.",
+        "Re-ran device compliance evaluation after sync completed and re-sent the assigned compliance policy \"EMEA Sales - Mobile Compliance\" so the Require encryption setting would be reprocessed on the device. The encryption signal reported back as compliant within approximately 8 minutes.",
+        "Validated that <HOSTNAME> reported current management data again, including the encryption compliance signal showing as compliant, and that the device state changed back from Not Compliant to Compliant in both the Intune portal and Company Portal on the handset.",
+        "Confirmed Conditional Access restrictions cleared for the affected mobile apps after the compliant state propagated, restoring Outlook Mobile and OneDrive Mobile access for <USER>. <PERSON> confirmed he could access both email and OneDrive files from the <LOCATION> office without further blocks."
+      ]
+    },
+    {
+      "ticket_id": "INC-DRF-0001",
+      "subject": "Internal DNS names failing to resolve from corporate resolver",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2026-01-05",
+      "service": "dns",
+      "root_cause": "Corporate DNS resolver cache contained stale internal A records and continued serving outdated answers after authoritative corp.local zone records had been updated.",
+      "resolution_steps": [
+        "Flushed the stale cache entries on the primary corporate DNS resolver (dns-resolver-01.corp.local / 10.20.1.10) using rndc flush to remove outdated A records (e.g., 10.10.10.5) being returned for affected corp.local hosts including internal-portal.corp.local, service-discovery.corp.local, and inventory-api.corp.local.",
+        "Verified the authoritative internal DNS zone contents on ns1-auth.corp.local and ns2-auth.corp.local for impacted records and confirmed the current addresses (10.20.30.15, 10.20.30.22, 10.20.30.40) were correct on the authoritative servers. SOA serial and zone transfer status validated between both authoritative nodes.",
+        "Adjusted TTL values for the affected zone records from 86400 seconds (24 hours) to 3600 seconds (1 hour) to reduce the likelihood and duration of long-lived stale cache entries after future record changes. Change approved by <PERSON> and applied to the corp.local zone on ns1-auth.corp.local.",
+        "Validated name resolution from representative clients \u2014 <PERSON>'s workstation <HOSTNAME> (<IP>) and <PERSON>'s workstation <HOSTNAME> (<IP>) \u2014 and Network Monitoring paths to confirm the resolver now returned the same current addresses as the authoritative servers. All three affected service endpoints confirmed reachable by FQDN.",
+        "Documented the cache validation and flush procedure (rndc flush on dns-resolver-01.corp.local) in the DNS support playbook and continued post-change monitoring via Network Monitoring for 48 hours for recurrence. Sent closure notification to <EMAIL> and <EMAIL> confirming resolution."
+      ]
+    },
+    {
+      "ticket_id": "INC-DRF-0002",
+      "subject": "Intermittent NXDOMAIN for internal host 'app-db.internal' from one client subnet",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2026-01-05",
+      "service": "dns",
+      "root_cause": "Subnet-specific DNS resolution was caused by an affected resolver path for clients on 10.20.30.0/24 that had incorrect or stale conditional forwarding/cache data for the internal zone. This caused that resolver to return NXDOMAIN for app-db.internal while other resolver paths continued to return the correct internal record.",
+      "resolution_steps": [
+        "Identify the resolver serving clients on 10.20.30.0/24 \u2014 confirmed as dns-res-east-02.corplabs.internal (10.20.30.2) \u2014 and compare its response for app-db.internal against a known-good internal resolver (dns-res-core-01.corplabs.internal, 10.50.1.10). NXDOMAIN was returned only by dns-res-east-02.",
+        "Review the resolver's conditional forwarder or zone forwarding configuration for the .internal domain on dns-res-east-02.corplabs.internal and correct the forwarding target/path \u2014 the forwarder was pointing to a decommissioned upstream server \u2014 so requests are sent to the proper authoritative internal DNS servers (dns-auth-01.corplabs.internal / dns-auth-02.corplabs.internal).",
+        "Flush the DNS cache on the affected resolver dns-res-east-02.corplabs.internal after the forwarding correction to remove cached NXDOMAIN responses and stale lookup data for app-db.internal.",
+        "Re-test name resolution for app-db.internal from the affected subnet (<PERSON>'s workstation <HOSTNAME> at <IP>) and from a known-good subnet (<PERSON> on 10.40.10.0/24) to confirm both return the same internal answer (A 10.60.5.22).",
+        "Document the resolver-specific DNS correction (forwarding target update on dns-res-east-02.corplabs.internal, performed by <PERSON>) and configure Network Monitoring alerts to detect recurrence of subnet-specific NXDOMAIN responses on the .internal zone, particularly for the <LOCATION> office subnets."
+      ]
+    },
+    {
+      "ticket_id": "INC-EDE-0001",
+      "subject": "BitLocker not enabling",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-01-17",
+      "service": "device-encryption",
+      "root_cause": "TPM protector was not initialized on the endpoint, preventing BitLocker from creating the required TPM-backed protector and blocking recovery key escrow to Intune/Device Compliance Service.",
+      "resolution_steps": [
+        "Validated TPM state on <HOSTNAME> and initialized the TPM protector locally using Initialize-Tpm, clearing legacy TPM ownership where needed so BitLocker could use the hardware protector.",
+        "Enabled BitLocker again on the C: volume using the TPM protector (manage-bde -on C: -RecoveryPassword) and confirmed encryption started successfully instead of returning the earlier TPM initialization failure.",
+        "Forced an Intune device sync from <HOSTNAME> (<IP>) and verified the assigned disk encryption policy was present on the endpoint for user <USER> without assignment issues.",
+        "Rotated the BitLocker recovery key on <HOSTNAME> and confirmed the current key escrowed successfully to Intune/Device Compliance Service under the device record for <USER>.",
+        "Monitored encryption and compliance status on <HOSTNAME> until BitLocker showed enabled on C:, the recovery key was visible to support in Intune, and the device returned to compliant status in Intune and Company Portal for user <PERSON> (<USER>)."
+      ]
+    },
+    {
+      "ticket_id": "INC-EDE-0002",
+      "subject": "BitLocker not enabled and recovery key not escrowed on corporate device",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2026-01-17",
+      "service": "device-encryption",
+      "root_cause": "BitLocker recovery key escrow failed during initial MDM enrollment, leaving the device with a protector present but no recovery key recorded in the Device Compliance Service, while BitLocker protection remained suspended.",
+      "resolution_steps": [
+        "Confirmed TPM 2.0 availability and existing BitLocker protector state on <HOSTNAME> (<HOSTNAME>, user <USER>, <EMP_ID>), then verified the device was receiving the assigned encryption policy EMEA-Sales-Encryption-v3 in Intune.",
+        "Rotated the BitLocker recovery key on <HOSTNAME> using manage-bde -protectors -delete C: followed by manage-bde -protectors -add C: -RecoveryPassword, and triggered a fresh recovery key backup to the Device Compliance Service to replace the missing escrow record for <USER>.",
+        "Forced an Intune/Windows MDM sync from <HOSTNAME> (IP <IP>) via Company Portal so the updated protector and escrow status were reported to compliance services. Sync completed successfully at 2026-01-17T18:38Z.",
+        "Validated that the new recovery key was visible in the Device Compliance Service under <PERSON>'s device record (<HOSTNAME>) and available for support recovery operations. Confirmed with agent <PERSON> (<EMAIL>) that the key was accessible.",
+        "Re-enabled BitLocker protection on the OS drive C: using manage-bde -protectors -enable C:, verified encryption protection was active (AES-256, full volume), and confirmed the device returned to compliant status in Intune. Notified <PERSON> at <EMAIL> that the issue was resolved."
+      ]
+    },
+    {
+      "ticket_id": "INC-LPD-0001",
+      "subject": "Windows laptop very slow",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2026-01-29",
+      "service": "laptop-support",
+      "root_cause": "A recently applied resource-heavy startup policy triggered excessive post-login processing, and an endpoint protection scan backlog ran concurrently, causing sustained CPU and disk I/O contention that delayed application launches and degraded overall laptop responsiveness.",
+      "resolution_steps": [
+        "Reviewed startup-impacting processes on the affected laptop <HOSTNAME> (user <USER>) and disabled 4 non-essential startup items (including redundant telemetry agents and a legacy inventory scanner) contributing to the post-login CPU spike.",
+        "Forced a device policy refresh through Endpoint Management (gpupdate /force) on <HOSTNAME> to correct the 2026-01-27 startup-related GPO policy application and prevent the heavy startup behavior from reapplying; confirmed the revised policy version was received.",
+        "Cleared the Endpoint Protection scan backlog of 14 queued definition updates by rescheduling full scans to off-hours (02:00 local <LOCATION> time) and allowing an immediate lighter quick-scan cycle to complete during support handling on <USER>'s device.",
+        "Removed 11.1 GB of temporary files from C:\\Windows\\Temp and C:\\Users\\<USER>\\AppData\\Local\\Temp and reclaimed disk space (free space restored to 19.3 GB) to reduce paging and startup disk contention during user sign-in on <HOSTNAME>.",
+        "Validated performance after logoff and logon on <USER>'s session, then monitored CPU and disk I/O until they returned to normal startup levels (CPU below 25% within 90 seconds, disk queue length < 2) and <PERSON> confirmed Outlook, Chrome, and the Sales CRM opened normally within 3-5 seconds. Advised agent <PERSON> to apply the same remediation to <PERSON>'s device under the parent investigation."
+      ]
+    },
+    {
+      "ticket_id": "INC-LPD-0002",
+      "subject": "Laptop slow",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2026-01-29",
+      "service": "laptop-support",
+      "root_cause": "A backlog of endpoint protection scans combined with multiple resource-heavy startup items and critically low disk space on C: caused sustained post-login CPU contention and delayed application launches.",
+      "resolution_steps": [
+        "Reviewed endpoint telemetry for <HOSTNAME> (user <USER>, IP <IP>) after login and confirmed CPU spikes to 85% were driven by a 14-day queued Defender scan backlog and multiple startup processes launching simultaneously under the Sales group policy.",
+        "Cleared the Defender scan backlog on <HOSTNAME> and allowed scan queues to drain so endpoint protection activity no longer consumed excessive CPU during user sign-in for <USER>.",
+        "Disabled non-essential startup items tied to the heavy Sales login profile on <HOSTNAME> and pushed a device policy refresh via Endpoint Management to apply the lighter startup configuration for <USER>.",
+        "Removed approximately 38 GB of temporary files using Windows Disk Cleanup and Storage Sense on <HOSTNAME> to reclaim disk space and restore the system drive to a healthier free-space level (16%) above the critical threshold.",
+        "Validated that post-login CPU utilization on <HOSTNAME> returned to normal (~12%) and disk availability remained healthy. Confirmed with <PERSON> (<USER>) that application launch times were back within expected baseline (under 5 seconds) before closing the ticket."
+      ]
+    },
+    {
+      "ticket_id": "INC-OES-0001",
+      "subject": "Outlook desktop stopped syncing Exchange Online mailbox",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-02-11",
+      "service": "exchange-online",
+      "root_cause": "Stale Outlook profile and cached connection state after the recent Office update prevented the Exchange Online mailbox from establishing a healthy MAPI over HTTP session.",
+      "resolution_steps": [
+        "Validated that the mailbox issue was isolated to the Outlook desktop client on <HOSTNAME> (IP <IP>) for user <PERSON> (<USER>, <EMP_ID>) and confirmed the client remained in a disconnected state with no folder updates for <EMAIL>.",
+        "Backed up the local Outlook data configuration on <HOSTNAME> and removed the affected Outlook profile for <USER> from Mail settings to eliminate the stale profile state.",
+        "Cleared stored Office and Outlook credentials for <EMAIL> from Windows Credential Manager on <HOSTNAME>, then recreated the Outlook profile using the existing Exchange Online account configuration.",
+        "Re-authenticated <PERSON> (<USER>) and verified the account <EMAIL> reconnected over MAPI over HTTP without returning to the disconnected state on <HOSTNAME>.",
+        "Monitored inbox and calendar synchronization on <HOSTNAME> until new items appeared normally and confirmed with <PERSON> via phone at <PHONE> that mailbox updates and message delivery had resumed. Ticket closed by <PERSON>."
+      ]
+    },
+    {
+      "ticket_id": "INC-OES-0002",
+      "subject": "Outlook mobile not syncing",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2026-02-11",
+      "service": "exchange-online",
+      "root_cause": "Primary cause was Exchange Online throttling affecting the mobile ActiveSync/Outlook mobile connection for the mailbox, evidenced by intermittent HTTP 429 responses and recovery after a temporary throttle exception was applied. A separate stale desktop Outlook profile also contributed to the initial desktop symptom, which created conflicting evidence but was not the remaining cause of the mobile sync failure.",
+      "resolution_steps": [
+        "Validated the connection state across desktop (<HOSTNAME>) and mobile (<HOSTNAME>) clients for mailbox <EMAIL> to separate the desktop profile issue from the continuing mobile sync failure.",
+        "Rebuilt the desktop Outlook profile on <HOSTNAME> for user <USER> and confirmed desktop mailbox synchronization resumed normally with full folder hierarchy and inbox updates.",
+        "Cleared the mobile ActiveSync partnership for <HOSTNAME> in Exchange Online admin center and re-paired the iOS device to rule out a stale device association or compliance issue. MDM confirmed device compliance throughout.",
+        "Escalated the mailbox <EMAIL> to Exchange Online support (handled by agent <PERSON>, <EMP_ID>) after diagnostics showed intermittent HTTP 429 throttling on mobile sync sessions originating from <HOSTNAME>.",
+        "Confirmed Exchange Online support applied a temporary throttle exception for mailbox <EMAIL> and verified mobile Outlook sync on <HOSTNAME> resumed successfully afterward. <PERSON> confirmed new emails arriving on mobile within minutes.",
+        "Closed the incident with monitoring guidance provided to <PERSON> (<EMAIL>) to re-engage Exchange support if throttling reappears for the mailbox or device <HOSTNAME>. Follow-up scheduled for 2026-02-18 by <PERSON>."
+      ]
+    },
+    {
+      "ticket_id": "INC-PDQ-0001",
+      "subject": "Print jobs stuck on server PS-PRINT01",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-02-21",
+      "service": "print-server",
+      "root_cause": "Corrupt HP printer driver package on PS-PRINT01 caused Print Spooler instability, queue processing failures, and client driver unavailable errors.",
+      "resolution_steps": [
+        "Reviewed the affected shared printer queues on PS-PRINT01 and confirmed 23 jobs were accumulating in a spooling state while the printer showed offline to clients across the <LOCATION> office, including submissions from <USER>, <USER>, and <USER>.",
+        "Removed the corrupted HP driver package (v5.6.0.2341) from the Windows Server 2019 print server and reinstalled the approved HP Universal Print Driver v5.8 package per the standard driver catalog.",
+        "Cleared all stuck jobs from the impacted print queues and restarted the Print Spooler service after the driver refresh. Notified affected users <PERSON> and <PERSON> that their pending jobs would need to be resubmitted.",
+        "Remapped the affected printer queues to the refreshed HP Universal Print Driver v5.8 package to ensure the queues were bound to the correct server driver. Confirmed queue binding via Printer Management Console.",
+        "Validated successful test prints from multiple client machines including <HOSTNAME> (<USER>) and <HOSTNAME> (<USER>), and confirmed the spooler remained responsive with no further queue hang behavior. <PERSON> (<USER>) also confirmed printing restored at 20:05 UTC."
+      ]
+    },
+    {
+      "ticket_id": "INC-PDQ-0002",
+      "subject": "Print Server jobs stuck",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2026-02-22",
+      "service": "print-server",
+      "root_cause": "Corrupted HP Universal printer driver package on PS-PRINT01 caused the Print Spooler to fail loading the driver, leaving shared print jobs stuck with a 'Driver unavailable' state.",
+      "resolution_steps": [
+        "Validated that the affected queues on PS-PRINT01 (\\\\PS-PRINT01\\NWK-3F-HP4050, \\\\PS-PRINT01\\NWK-3F-HP5200, \\\\PS-PRINT01\\NWK-2F-HP4050) were failing with the message 'Driver unavailable' and identified the HP Universal driver package v6.9.0.24297 as the common failing component across all three queues.",
+        "Reinstalled the approved HP Universal driver package v6.9.0.24300 on PS-PRINT01 through SCCM to replace the corrupted driver files, verifying the SHA-256 hash of hpuni197.dll matched the deployment manifest after installation.",
+        "Cleared all 23 stuck print jobs from the affected queues and restarted the Print Spooler service on PS-PRINT01 to reload the corrected driver package cleanly. Confirmed the spooler started without Event ID 372 errors.",
+        "Remapped the affected printer queues (NWK-3F-HP4050, NWK-3F-HP5200, NWK-2F-HP4050) to the approved driver package v6.9.0.24300 so queue-to-driver associations were consistent after reinstall.",
+        "Submitted validation print jobs from multiple endpoints \u2014 <HOSTNAME> (<USER>), <USER>'s workstation, and <USER>'s workstation \u2014 and confirmed the queues processed normally without new spooler driver load failures. All test pages printed within 5 seconds of submission.",
+        "Updated the approved printer driver deployment policy in SCCM to pin HP Universal driver v6.9.0.24300 as the mandatory version and added a file-integrity pre-check to prevent the stale or corrupted package v6.9.0.24297 from being redeployed to the print server. Notified the <LOCATION> Workplace Services team lead, <PERSON> (<EMAIL>), of the policy update."
+      ]
+    },
+    {
+      "ticket_id": "INC-SDA-0001",
+      "subject": "Access denied to Finance shared drive for user jane.doe",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2026-03-06",
+      "service": "shared-drive",
+      "root_cause": "missing security group membership",
+      "resolution_steps": [
+        "Confirmed the Finance share ACLs on \\\\fs01\\Finance were assigned to the FINANCE_READ Active Directory security group and verified the share and NTFS permissions were intact on FS01. Agent <PERSON> (<USER>) validated the ACL configuration against DC-EAST-01.corp.local.",
+        "Added <EMAIL> (<EMP_ID>) to the approved FINANCE_READ security group to restore the required access entitlement for \\\\fs01\\Finance. Change approved by manager <PERSON> (<EMAIL>) per standard access request procedure.",
+        "Verified Active Directory replication across domain controllers (DC-EAST-01.corp.local, DC-EAST-02.corp.local) so the updated FINANCE_READ group membership for <USER> was available to all domain controllers used for authentication at the <LOCATION> office.",
+        "Had the user <USER> refresh sign-in on <HOSTNAME> by signing out and back in so a new Kerberos access token would include the updated FINANCE_READ membership.",
+        "Cleared stale mapped-drive credentials from Windows Credential Manager on <HOSTNAME> (removed cached entry for fs01.corp.local) and remapped F: to \\\\fs01\\Finance using 'net use F: \\\\fs01\\Finance /persistent:yes' to remove cached credential prompts tied to the prior failed access state.",
+        "Retested access with <USER> on <HOSTNAME> and confirmed the Finance shared drive at \\\\fs01\\Finance opened successfully without Access Denied errors. Verified read access to subfolders including \\\\fs01\\Finance\\Accounts_Payable and \\\\fs01\\Finance\\Reports. Contacted user by phone at <PHONE> to confirm resolution."
+      ]
+    },
+    {
+      "ticket_id": "INC-SDA-0002",
+      "subject": "denied access to Finance shared drive (FIN_SHARE)",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-03-07",
+      "service": "shared-drive",
+      "root_cause": "The user's AD membership was updated, but access continued to fail because the workstation was still presenting stale mapped-drive or cached SMB credentials that did not reflect the new Finance share entitlement. AD group membership was correct, and the deny behavior was caused by credential/session mismatch rather than a missing share permission.",
+      "resolution_steps": [
+        "Confirmed <USER> (<PERSON>, <EMP_ID>) was a member of the FINANCE_SHARE AD security group and that the group change (CR-20260302-114, processed by <USER>) had replicated successfully across all domain controllers including DC-EAST-03.corp.local.",
+        "Validated the Finance shared drive path (\\\\FS-EAST-02.corp.local\\FIN_SHARE mapped as F:) being used on <HOSTNAME> and ruled out access through an outdated mapped path or stale shortcut.",
+        "Cleared cached Windows credentials from Credential Manager on <HOSTNAME> (stale entry for FS-EAST-02.corp.local dated 2026-02-18) and disconnected the existing mapped network drive session (net use F: /delete) for the Finance share.",
+        "Refreshed the user's Kerberos logon token (klist purge) and remapped FIN_SHARE (net use F: \\\\FS-EAST-02.corp.local\\FIN_SHARE /user:CORP\\<USER>) using the current corporate identity context with updated group membership.",
+        "Retested access to the Finance department folder (F:\\Finance_Dept) on <HOSTNAME> and confirmed the share opened without credential prompts or further DENY events. Notified <PERSON> at <EMAIL> that access was restored."
+      ]
+    },
+    {
+      "ticket_id": "INC-SIB-0001",
+      "subject": "Software Center installation blocked for FinanceApp (entitlement missing) \u2014 resolved",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2026-03-17",
+      "service": "software-center",
+      "root_cause": "User/device was not included in the required FinanceApp entitlement deployment group, so Software Center policy evaluation did not authorize or present the application for installation.",
+      "resolution_steps": [
+        "Reviewed Software Center client behavior on <HOSTNAME> (IP <IP>) and Intune admin console targeting to confirm the FinanceApp deployment was not available to user <USER> (<PERSON>, <EMP_ID>) because membership in SG-FinanceApp-Entitlement was missing.",
+        "Added user <USER> and device <HOSTNAME> to the SG-FinanceApp-Entitlement group in the Intune endpoint management configuration, performed by agent <USER>.",
+        "Approved and synchronized the updated SG-FinanceApp-Entitlement group membership to the Intune management platform so the FinanceApp deployment would target the endpoint <HOSTNAME>.",
+        "Forced a device policy and inventory refresh from the endpoint management client on <HOSTNAME> to update Software Center catalog visibility; refresh triggered remotely by <USER> at 23:12 UTC.",
+        "Retried the FinanceApp installation from Software Center on <HOSTNAME> and confirmed the application appeared in the catalog and installed successfully at 23:16 UTC. <PERSON> confirmed she could launch FinanceApp without issues."
+      ]
+    },
+    {
+      "ticket_id": "INC-SIB-0002",
+      "subject": "Software Center installation blocked by Endpoint Protection policy",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-03-18",
+      "service": "software-center",
+      "root_cause": "Endpoint Protection policy BlockUnapprovedInstall was blocking the approved FinanceApp installer, and stale Intune inventory delayed Software Center catalog visibility for the device.",
+      "resolution_steps": [
+        "Validated that FinanceApp was an approved application for the Finance-Analysts group (which includes <USER>, <EMP_ID>) and confirmed the endpoint protection block on <HOSTNAME> was caused by policy BlockUnapprovedInstall targeting the FinanceApp_Setup.msi installer.",
+        "Submitted and completed an Endpoint Protection policy change request (handled by security analyst <PERSON>, <EMAIL>) to add FinanceApp to the allowed application list as an approved exception under policy BlockUnapprovedInstall.",
+        "Triggered a device inventory and policy refresh for <HOSTNAME> through the Intune portal so the endpoint could receive the updated allow policy and refreshed Software Center catalog. Sync completed successfully within minutes.",
+        "Rechecked Software Center on <HOSTNAME> after the refresh and confirmed FinanceApp became visible in the catalog for user <USER>.",
+        "Retried the installation of FinanceApp from Software Center on <HOSTNAME> and verified the application installed successfully without further Endpoint Protection policy blocks. Confirmed with <PERSON> via phone (ext. <PHONE>) that the application is functioning correctly."
+      ]
+    },
+    {
+      "ticket_id": "INC-SML-0001",
+      "subject": "Users experiencing MFA prompt loop during SSO login (Okta/Azure AD)",
+      "status": "closed",
+      "priority": "medium",
+      "opened": "2026-03-31",
+      "service": "sso",
+      "root_cause": "Stale MFA enrollment records remained on affected user accounts after the Azure AD to Okta identity sync, causing enrolled authenticators and group-based policy evaluation to mismatch during SSO and resulting in repeated MFA challenges instead of successful session completion.",
+      "resolution_steps": [
+        "Reviewed Okta authentication logs and isolated impacted users showing MFA enrollment mismatches and repeated challenge events during SSO attempts. Six affected accounts were identified, including <USER> (<EMP_ID>), <USER> (<EMP_ID>), and <USER> (<EMP_ID>), all in the <LOCATION> Sales team.",
+        "Reset MFA enrollment for affected users in Okta, including <USER>, <USER>, and <USER>, and required fresh authenticator enrollment to remove stale factor records that persisted after the morning identity sync.",
+        "Validated that users successfully re-enrolled their authenticators from their devices and confirmed the new factor status was active in the identity provider. <PERSON> confirmed successful Okta Verify push enrollment from <HOSTNAME>, and <USER> and <USER> confirmed enrollment from their respective workstations.",
+        "Reviewed Azure AD to Okta group synchronization and corrected the group-based conditional access mapping that was contributing to policy and enrollment mismatch for affected users. The SalesForce_SSO_Access group was re-synced and all six Sales users were confirmed as active members in both Azure AD and Okta.",
+        "Retested SSO access to the SSO Portal and downstream SaaS applications, then confirmed impacted users could complete MFA once and reach Salesforce and other assigned apps. Verification was performed by agent <PERSON> with <USER> and <USER> completing end-to-end login to Salesforce and Concur without repeated prompts."
+      ]
+    },
+    {
+      "ticket_id": "INC-SML-0002",
+      "subject": "SSO MFA prompt loop for users authenticating via Okta",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-03-31",
+      "service": "sso",
+      "root_cause": "Stale MFA enrollment in Okta caused device registration bindings to be out of sync with affected users' authenticator state after an MFA migration, so MFA challenges were issued repeatedly without a successful factor completion.",
+      "resolution_steps": [
+        "Identified 14 affected Sales users in Okta sign-on logs showing repeated MFA challenges without successful factor completion, including <USER>, <USER>, and <USER> as initial confirmed cases from the <LOCATION> office.",
+        "Reset MFA enrollment for all 14 impacted accounts via the Okta Admin Console (Users > Multifactor > Reset Factors) so stale device bindings and outdated authenticator registrations from the March 28 TOTP migration were removed.",
+        "Had affected users re-enroll their Okta Verify authenticator app and complete a fresh device binding in Okta. Coordinated with Sales team lead <PERSON> to schedule re-enrollment in small batches to minimize disruption during business hours.",
+        "Cleared active Okta sessions for all 14 impacted users (Admin > People > Clear User Sessions) to force a clean authentication flow with the new MFA enrollment state, ensuring no cached stale tokens persisted.",
+        "Validated Azure AD group mapping (Sales-SSO-Access) and application assignment for Salesforce and Workday, then confirmed successful login and app access for <USER> (<IP>), <USER> (<HOSTNAME>), and <USER> (<IP>) after re-enrollment.",
+        "Monitored Okta sign-on activity for 24 hours (2026-04-01T00:00Z through 2026-04-02T00:00Z) to verify the MFA loop did not recur for any of the 14 re-enrolled users. No further authentication failures were observed, and ticket was closed by agent <PERSON> (<USER>)."
+      ]
+    },
+    {
+      "ticket_id": "INC-VDA-0001",
+      "subject": "GlobalProtect VPN disconnects immediately",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-04-11",
+      "service": "vpn",
+      "root_cause": "Expired device certificate on affected endpoints caused GlobalProtect certificate validation to fail after successful Okta MFA, which triggered immediate post-authentication tunnel termination.",
+      "resolution_steps": [
+        "Validated that Okta MFA completed successfully for <USER> and <USER> and confirmed the VPN disconnect occurred after authentication during the post-auth certificate validation stage on endpoints <HOSTNAME> and <HOSTNAME>.",
+        "Renewed the expired device certificate on affected endpoints <HOSTNAME> and <HOSTNAME> through the Device Certificate Service and confirmed the new certificate (valid through 2027-04-11) was present in the local endpoint certificate store for both machines.",
+        "Refreshed and re-enrolled the GlobalProtect VPN profile on both endpoints so the client used the current device certificate and active enrollment configuration. Profile re-enrollment performed remotely by desktop support technician <PERSON>.",
+        "Retested VPN connectivity on affected devices for users <USER> and <USER> to verify the tunnel remained established and internal applications (intranet, Confluence, Salesforce) were reachable without immediate disconnects. Both users confirmed stable connectivity from their remote locations in <LOCATION>.",
+        "Adjusted the device certificate renewal policy in the Device Certificate Service to trigger renewal 30 days before certificate expiry (previously 7 days) to reduce recurrence during VPN authentication, particularly for the Sales and Marketing user group in the EMEA region."
+      ]
+    },
+    {
+      "ticket_id": "INC-VDA-0002",
+      "subject": "GlobalProtect VPN disconnects immediately",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2026-04-11",
+      "service": "vpn",
+      "root_cause": "The affected endpoint presented an expired device certificate during post-MFA TLS validation. Okta MFA completed successfully, but GlobalProtect rejected the expired certificate and terminated the VPN tunnel immediately after authentication.",
+      "resolution_steps": [
+        "Renewed the endpoint device certificate for <HOSTNAME> through the Device Certificate Service (new cert serial 8B:3F:22:A1, valid through 2027-04-11) and confirmed the new certificate installed successfully on <PERSON>'s laptop under the Personal certificate store.",
+        "Pushed an updated GlobalProtect VPN profile to <HOSTNAME> via the management console so the active profile aligned with the renewed device certificate and pointed to gateway vpn-uswest.corplabs.com.",
+        "Cleared the stale local GlobalProtect profile and expired certificate association (serial 4A:7C:91:DE) cached on the device by removing entries from the PanGPS credential manager on <HOSTNAME>.",
+        "Had <PERSON> re-enroll the VPN client using his credentials (<USER>) and complete a fresh Okta MFA sign-in to establish a new tunnel session to vpn-uswest.corplabs.com.",
+        "Validated that the VPN session on <HOSTNAME> remained connected and internal applications (including https://intranet.corplabs.com) stayed reachable during a 2-hour observation window from 09:15 to 11:15 UTC. User confirmed full connectivity from home IP <IP>.",
+        "Scheduled proactive remediation and expiry monitoring for other devices in the Remote Workers group with expired or near-expiry device certificates. Desktop support lead <PERSON> created a recurring Device Certificate Service audit report filtered to the <LOCATION> and us-west-2 region endpoints, with 30-day advance expiry alerts sent to the IT operations team at it-ops@corplabs.com."
+      ]
+    },
+    {
+      "ticket_id": "INC-WCI-0001",
+      "subject": "Cannot connect to Corporate Wi-Fi",
+      "status": "closed",
+      "priority": "low",
+      "opened": "2026-04-24",
+      "service": "wifi",
+      "root_cause": "The server certificate used by the RADIUS/WLC wireless authentication path had expired, causing EAP-TLS certificate validation failures and RADIUS Access-Reject responses for corporate Wi-Fi clients.",
+      "resolution_steps": [
+        "Confirmed the wireless authentication failure was tied to certificate validation errors in AP, RADIUS (radius-fra.corp.internal), and controller (WLC-FRA-01) logs rather than AP connectivity or VLAN configuration. Network engineer <PERSON> (<USER>, <EMP_ID>) verified the expired certificate serial.",
+        "Renewed the expired RADIUS server certificate (CN=radius-fra.corp.internal) used for 802.1X/EAP-TLS authentication via the internal PKI portal, generating a new certificate with validity through 2028-04-23.",
+        "Deployed the renewed certificate and updated the certificate binding on WLC-FRA-01 and the related RADIUS authentication components on radius-fra.corp.internal. Binding was confirmed active by <PERSON>.",
+        "Restarted the RADIUS service on radius-fra.corp.internal and performed a controlled reload of WLC-FRA-01 so the new certificate chain was actively presented during 802.1X authentication handshakes.",
+        "Validated successful client re-authentication in infrastructure logs \u2014 confirmed <PERSON> (<USER>) on <HOSTNAME> (<IP>) and <PERSON> (<USER>) on <HOSTNAME> could connect after forgetting and rejoining the CorpNet-Secure SSID where re-enrollment was required. All affected <LOCATION> users reported connectivity restored by 11:30 UTC."
+      ]
+    },
+    {
+      "ticket_id": "INC-WCI-0002",
+      "subject": "Intermittent disconnects from Corporate Wi-Fi",
+      "status": "closed",
+      "priority": "high",
+      "opened": "2026-04-24",
+      "service": "wifi",
+      "root_cause": "Wireless controller certificate rotation restored only part of the 802.1X trust chain; several endpoints still had stale corporate Wi-Fi profiles or certificate bindings, and NAC policy evaluation continued rejecting some Sales devices until profiles were re-enrolled and policy alignment was corrected.",
+      "resolution_steps": [
+        "Renewed and validated the wireless controller certificate on WLC-WEST-01 so the 802.1X authentication service presented the correct server certificate chain to all connecting Sales endpoints in the <LOCATION> office.",
+        "Reviewed NAC authentication results for affected Sales devices (<USER>, <USER>, <USER>, and others) and confirmed policy rejections were tied to stale endpoint wireless profile or certificate state after the certificate change. <PERSON> (<USER>) from the network team verified the NAC audit logs.",
+        "Re-enrolled the corporate Wi-Fi profile on impacted laptops \u2014 including <HOSTNAME> and <HOSTNAME> \u2014 to refresh the SSID configuration, trust settings, and device certificate association used for 802.1X authentication. Users <USER>, <USER>, and <USER> confirmed reconnection.",
+        "Confirmed affected devices could authenticate successfully, receive the expected network access policy, and obtain IP addressing (verified 10.42.17.x range) after rejoining Corporate Wi-Fi. <PERSON> and <PERSON> both validated stable connectivity over a 30-minute observation window.",
+        "Prepared and scheduled an MDM push of the updated wireless profile targeting all Sales laptops in the <LOCATION> region, and coordinated follow-up NAC policy cleanup with <PERSON> (<USER>) so temporary exceptions can be removed without reintroducing authentication failures. Follow-up review scheduled for 2026-04-27."
+      ]
+    }
+  ]
+}

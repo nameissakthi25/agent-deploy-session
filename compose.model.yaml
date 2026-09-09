@@ -1,0 +1,111 @@
+# The model layer. Bring this up on its own first and confirm the model
+# answers a curl request before adding anything else.
+
+services:
+  vllm:
+    # Pinned exactly. A resolver or image surprise on the day of the session
+    # cannot be recovered from.
+    # Qwen3.8 needs vLLM 0.17.0+ for the qwen3_5 hybrid architecture. v0.29.0
+    # is the current release; do not downgrade without re-checking that.
+    image: vllm/vllm-openai:v0.29.0
+    container_name: vllm
+    restart: unless-stopped
+
+    # Give the container the GPU. Without this block vLLM starts and then
+    # dies looking for CUDA.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    # vLLM's workers talk to each other over shared memory. The Docker default
+    # of 64MB is too small and shows up as a confusing NCCL hang, not an error.
+    ipc: host
+
+    environment:
+      # Optional: Qwen3.8-27B-FP8 is Apache-2.0 and ungated, so the weights
+      # download without a token. Setting one only raises your rate limit.
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      # Keep the weights out of the image layer so a container restart does
+      # not re-download 30GB.
+      HF_HOME: /root/.cache/huggingface
+
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+
+    ports:
+      # Deliberately published so the session can show that this endpoint has
+      # no authentication in front of it. On a public IP, that matters.
+      - "8000:8000"
+
+    command:
+      # Qwen3.8-27B, FP8 weights: ~31GB, versus ~57.5GB for BF16. On an 80GB
+      # card that is the difference between ~41GB left for KV cache and ~14GB,
+      # which decides whether the Stage 3 fan-out fits.
+      # The box is an H100 (compute capability 9.0), which has native FP8
+      # hardware -- so this runs on real FP8 tensor cores rather than the
+      # weight-only Marlin path an A100 would have used.
+      - --model=${MODEL_ID:-Qwen/Qwen3.8-27B-FP8}
+      # A stable name the application code can hardcode, so swapping the
+      # checkpoint above does not touch the app.
+      - --served-model-name=qwen3
+      - --host=0.0.0.0
+      - --port=8000
+
+      # --- tool calling: the highest-risk dependency in the whole session ---
+      # Lets the model choose a tool on its own instead of being forced.
+      - --enable-auto-tool-choice
+      # Qwen3.8 uses the qwen3_coder tool-call format -- NOT hermes, which is
+      # what earlier Qwen3 models wanted. With the wrong parser vLLM returns
+      # the call as plain text and every Stage 3 run fails silently.
+      - --tool-call-parser=qwen3_coder
+      # Splits thinking tokens into a separate reasoning field instead of
+      # leaving them inline in the answer. Stage 3 turns thinking off for the
+      # supervisor and leaves it on for the synthesizer; both rely on this.
+      #
+      # Note: Qwen3.8 thinks by DEFAULT, at reasoning_effort=xhigh. Every node
+      # must therefore opt out explicitly -- see app/llm.py. A supervisor left
+      # on the default reasons at length before every routing decision, which
+      # makes traces unreadable and the fan-out very expensive.
+      - --reasoning-parser=qwen3
+
+      # --- memory and concurrency ---
+      # Fraction of the 80GB card vLLM is allowed to claim. Weights take a
+      # fixed share; everything left over becomes KV cache, which is what
+      # actually limits how many users can be served at once. 0.90 = 72GB,
+      # minus ~31GB of FP8 weights, leaves ~41GB of KV headroom for the
+      # Stage 3 fan-out (~a dozen concurrent calls).
+      #
+      # Qwen3.8 is a hybrid: only 16 of its 64 layers use full attention
+      # (full_attention_interval=4), the rest are linear attention. KV cache
+      # per token is therefore roughly a quarter of a conventional 27B dense
+      # model. Worth showing at 0:04 -- it is why this model fits at all.
+      - --gpu-memory-utilization=0.90
+      # The model supports 262144 natively. We cap far below that on purpose:
+      # context length costs KV cache per sequence, and concurrency is what
+      # Stage 3 is short of. This comfortably fits the RAG prompt plus history.
+      - --max-model-len=32768
+      # Hard cap on concurrent sequences. Lower this first if Stage 3 hits OOM.
+      - --max-num-seqs=32
+      # Qwen3.8-27B is natively vision-language, but this session never sends
+      # an image. Allowing zero images per prompt skips the multimodal
+      # profiling run and stops vLLM reserving memory for image tokens.
+      - --limit-mm-per-prompt={"image":0,"video":0}
+
+    # The app services depend on this with condition: service_healthy, so this
+    # check is what stops them starting before the weights finish loading and
+    # crashing. start_period is generous because a cold weight download is slow.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 900s
+
+volumes:
+  hf-cache:

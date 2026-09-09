@@ -1,0 +1,75 @@
+# State that outlives the application containers: the vector index and
+# the trace store. Both have their own named volume.
+
+services:
+  # --- step 6: the vector database ------------------------------------------
+  # Its own container, its own volume, reached over the network by a
+  # connection string. The application holds only that string -- it has no
+  # idea where the index physically lives, which is the Stage 2 lesson.
+  #
+  # In production this would be a managed service. Hosting it here means the
+  # index does leave the application container but not the machine, so say
+  # out loud what that costs: no managed backups, no failover, and a disk
+  # that dies takes the index with it.
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      # Published so scripts/index_corpus.py can be run from the host.
+      - "6333:6333"
+    volumes:
+      # The index lives here, not on any application container's filesystem.
+      # Rebuilding chat-rag does not touch it.
+      - qdrant-data:/qdrant/storage
+    # The Qdrant image ships bash but no curl, wget or python, so this is a
+    # TCP connect check rather than a request to /readyz. It answers "is
+    # Qdrant accepting connections", which is what the app services need to
+    # wait for; the retriever fails loudly if Qdrant is not actually usable.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - cat < /dev/null > /dev/tcp/127.0.0.1/6333
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # --- step 4: tracing ------------------------------------------------------
+  phoenix:
+    # Pinned to match arize-phoenix-otel==0.17.1 in requirements.txt.
+    image: arizephoenix/phoenix:version-20.9.0
+    container_name: phoenix
+    restart: unless-stopped
+    ports:
+      # Published so it can be opened on the second screen from 0:32 onward.
+      - "6006:6006"
+    environment:
+      # Persist to the named volume below, so traces survive a restart and the
+      # thumbs-downs collected during the session are still there at 1:33.
+      PHOENIX_WORKING_DIR: /mnt/data
+    volumes:
+      - phoenix-data:/mnt/data
+    # The Phoenix image is distroless: there is no /bin/sh in it, so a
+    # CMD-SHELL healthcheck can never run. Its entrypoint is
+    # /usr/bin/python3.13, so this uses exec-form CMD to call that interpreter
+    # directly. Brittle in one specific way -- an image that bumps its Python
+    # version breaks this path -- which is the price of a distroless image.
+    healthcheck:
+      test:
+        - CMD
+        - /usr/bin/python3.13
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:6006/healthz').status==200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # --- step 3: stage 1, the plain chatbot -----------------------------------
+
+volumes:
+  phoenix-data:
+  qdrant-data:

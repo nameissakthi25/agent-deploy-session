@@ -1,0 +1,15 @@
+# The Streamlit UI. Same layer discipline as Dockerfile.app: dependencies
+# first, code last, so a UI edit rebuilds in a second or two.
+FROM python:3.11-slim
+
+WORKDIR /srv
+COPY requirements-ui.txt .
+RUN pip install --no-cache-dir -r requirements-ui.txt
+
+COPY ui/ ./ui/
+
+ENV PYTHONUNBUFFERED=1
+
+CMD ["streamlit", "run", "ui/app.py", \
+     "--server.port=8501", "--server.address=0.0.0.0", \
+     "--server.headless=true", "--browser.gatherUsageStats=false"]

@@ -1,0 +1,25 @@
+# Lint settings. Deliberately close to ruff's defaults -- the point of the
+# linter here is to catch real mistakes in CI, not to enforce a house style
+# on code that gets read aloud.
+
+line-length = 90
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes: unused imports, undefined names
+    "I",   # import sorting
+    "UP",  # outdated syntax
+    "B",   # common bugs
+]
+ignore = [
+    # app/config.py and the host-side scripts set environment variables and
+    # adjust sys.path before importing app modules, on purpose. That import
+    # order is meaningful, not accidental.
+    "E402",
+]
+
+[lint.per-file-ignores]
+# The fast suite imports app modules only after conftest.py has supplied a
+# test environment, so its imports cannot move to the top either.
+"tests/*" = ["E402"]
