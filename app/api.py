@@ -118,7 +118,7 @@ def post_chat(request: ChatRequest) -> ChatResponse:
         # Guard 3: before anything reaches the user. Guard 2 is the tool guard,
         # which runs inside the Stage 3 graph rather than here.
         try:
-            response = check_output(_client, answer, STAGE, trace_id)
+            response = check_output(_client, answer, STAGE, trace_id, message)
             span.set_attribute("output.value", response.answer)
             return response
         except OutputRejected as error:

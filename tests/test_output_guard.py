@@ -59,7 +59,7 @@ def test_policy_clauses_are_all_judgeable_from_the_answer_alone() -> None:
     from app.guards.output_guard import POLICY
 
     clauses = [line for line in POLICY.splitlines() if line.startswith("- ")]
-    assert len(clauses) == 4, "a clause was added or removed; check judgeability"
+    assert len(clauses) == 3, "a clause was added or removed; check judgeability"
 
     # Phrasings that need evidence the judge never sees.
     forbidden = ("was not given", "not provided in", "invent", "grounded", "retrieved")
@@ -69,3 +69,34 @@ def test_policy_clauses_are_all_judgeable_from_the_answer_alone() -> None:
                 f"clause {clause!r} appears to require the evidence, which the "
                 "judge is never shown"
             )
+
+
+def test_judge_runs_at_temperature_zero(allowing_client) -> None:
+    """A policy gate must be reproducible, not sampled.
+
+    At the model card's generation temperature of 0.7 this judge blocked a
+    correct answer roughly one time in five, which made the smoke test and the
+    deploy gate intermittent.
+    """
+    check_output(allowing_client, "fine", 1, None)
+    assert allowing_client.requests[0]["temperature"] == 0.0
+
+
+def test_the_judge_is_shown_the_question(allowing_client) -> None:
+    """Topicality is a property of the (question, answer) pair.
+
+    Judged from the answer alone, "explaining ChatGPT" and "explaining why
+    BitLocker fails to enable" are indistinguishable -- both describe an
+    external product. A wording strong enough to catch the first blocked the
+    second, and with it half the corpus. The question is what separates them.
+    """
+    check_output(
+        allowing_client,
+        "BitLocker needs an initialised TPM.",
+        3,
+        None,
+        question="Why would BitLocker fail to enable?",
+    )
+    sent = allowing_client.requests[0]["messages"][0]["content"]
+    assert "Why would BitLocker fail to enable?" in sent
+    assert "BitLocker needs an initialised TPM." in sent

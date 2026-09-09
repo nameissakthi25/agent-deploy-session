@@ -63,6 +63,7 @@ def chat(
     thinking: bool = False,
     reasoning_effort: str = "low",
     max_tokens: int = 1024,
+    temperature: float | None = None,
 ):
     """One chat completion.
 
@@ -71,6 +72,10 @@ def chat(
     unreadable. The synthesizer is the one place it is turned on.
     """
     mode = THINKING if thinking else NON_THINKING
+    # The model card's sampling values are tuned for generation. A call that
+    # classifies rather than writes wants temperature 0 instead, so callers
+    # can override it -- see the output guard's policy judge.
+    sampling_temperature = mode["temperature"] if temperature is None else temperature
     extra_body = dict(mode["extra_body"])
     extra_body["chat_template_kwargs"] = {
         "enable_thinking": thinking,
@@ -82,7 +87,7 @@ def chat(
     request = {
         "model": MODEL_NAME,
         "messages": messages,
-        "temperature": mode["temperature"],
+        "temperature": sampling_temperature,
         "top_p": mode["top_p"],
         "presence_penalty": mode["presence_penalty"],
         "max_tokens": max_tokens,
