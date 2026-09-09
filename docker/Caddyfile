@@ -25,11 +25,20 @@
 		reverse_proxy chat-agents:8103
 	}
 
-	# Phoenix serves its whole UI from the root, so this rewrites rather than
-	# stripping: /traces lands on the Phoenix home page and its own asset
-	# paths still resolve.
-	handle /traces* {
-		rewrite * /
+	# Phoenix needs BOTH halves of the usual root-path contract:
+	#
+	#   PHOENIX_HOST_ROOT_PATH=/traces  makes it EMIT /traces/assets/... URLs
+	#   handle_path (not handle)        STRIPS /traces before forwarding
+	#
+	# It emits prefixed URLs but still serves its static files at the root, so
+	# the proxy has to strip. Getting only one half right fails silently:
+	#   - strip without the root path: assets are requested at /assets/... and
+	#     the catch-all below hands them to Streamlit
+	#   - root path without strip: Phoenix returns its SPA index HTML for
+	#     /traces/assets/... instead of the asset
+	# Both failure modes return HTTP 200 and render a blank page, so check
+	# Content-Type rather than status when verifying this.
+	handle_path /traces* {
 		reverse_proxy phoenix:6006
 	}
 

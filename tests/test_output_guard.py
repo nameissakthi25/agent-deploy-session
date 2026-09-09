@@ -46,3 +46,26 @@ def test_judge_call_is_cheap(allowing_client) -> None:
     assert request["max_tokens"] == 8
     kwargs = request["extra_body"]["chat_template_kwargs"]
     assert kwargs["enable_thinking"] is False
+
+
+def test_policy_clauses_are_all_judgeable_from_the_answer_alone() -> None:
+    """A canary on the policy, not a behaviour test.
+
+    Every clause must be assessable from the ANSWER, because that is all the
+    judge is shown. A clause about groundedness once blocked every correct
+    answer here, and the same mistake later reappeared in the eval dataset.
+    If a clause is added that needs the evidence, this test is the reminder.
+    """
+    from app.guards.output_guard import POLICY
+
+    clauses = [line for line in POLICY.splitlines() if line.startswith("- ")]
+    assert len(clauses) == 4, "a clause was added or removed; check judgeability"
+
+    # Phrasings that need evidence the judge never sees.
+    forbidden = ("was not given", "not provided in", "invent", "grounded", "retrieved")
+    for clause in clauses:
+        for phrase in forbidden:
+            assert phrase not in clause.lower(), (
+                f"clause {clause!r} appears to require the evidence, which the "
+                "judge is never shown"
+            )

@@ -50,6 +50,14 @@ services:
       # Persist to the named volume below, so traces survive a restart and the
       # thumbs-downs collected during the session are still there at 1:33.
       PHOENIX_WORKING_DIR: /mnt/data
+      # Serve the UI under /traces so its asset URLs are emitted as
+      # /traces/assets/... Without this Phoenix asks for /assets/... at the
+      # root, Caddy's catch-all hands those to Streamlit, and the page renders
+      # blank -- while every request still returns HTTP 200, so a status-code
+      # check says everything is fine.
+      # The OTLP collector still answers at /v1/traces as well as
+      # /traces/v1/traces, so PHOENIX_COLLECTOR_ENDPOINT is unaffected.
+      PHOENIX_HOST_ROOT_PATH: /traces
     volumes:
       - phoenix-data:/mnt/data
     # The Phoenix image is distroless: there is no /bin/sh in it, so a
