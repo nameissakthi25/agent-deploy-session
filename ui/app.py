@@ -54,7 +54,7 @@ def send_feedback(turn: dict, route: str, helpful: bool) -> None:
             timeout=30.0,
         )
         response.raise_for_status()
-        turn["feedback"] = "thumbs up" if helpful else "thumbs down"
+        turn["feedback"] = "👍 helpful" if helpful else "👎 not helpful"
     except Exception as error:
         turn["feedback_error"] = str(error)
 
@@ -101,16 +101,22 @@ for index, turn in enumerate(st.session_state.turns):
         elif turn.get("feedback_error"):
             st.warning(f"could not record feedback: {turn['feedback_error']}")
         else:
-            up, down, link = st.columns([1, 1, 6])
+            # Icons rather than words: the text labels were wide enough to be
+            # truncated to "thu..." in these columns, which is worse than no
+            # label at all. help= carries the meaning for anyone hovering or
+            # using a screen reader.
+            up, down, link = st.columns([1, 1, 10])
             up.button(
-                "thumbs up",
+                "👍",
                 key=f"up-{index}",
+                help="This answer was helpful",
                 on_click=send_feedback,
                 args=(turn, turn["route"], True),
             )
             down.button(
-                "thumbs down",
+                "👎",
                 key=f"down-{index}",
+                help="This answer was not helpful",
                 on_click=send_feedback,
                 args=(turn, turn["route"], False),
             )
