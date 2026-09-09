@@ -97,6 +97,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: gpu-instance
+    permissions:
+      contents: read
+      # Lets this job's GITHUB_TOKEN pull the image it built.
+      packages: read
     steps:
       # === READ THIS OUT LOUD DURING THE SESSION ===========================
       #
@@ -117,7 +121,14 @@ jobs:
       # to a box we rented, over SSH, and SSH has no concept of a
       # ten-minute credential.
       #
-      # Present this as the honest cost of owning the whole stack.
+      # There is a contrast inside THIS job worth pointing at. The registry
+      # login below uses GITHUB_TOKEN: minted for this run, scoped to this
+      # repository, dead the moment the job ends. The SSH key above is a
+      # permanent credential doing a similar job badly. Same file, same
+      # deploy, two credentials -- one of them is how it should work, and the
+      # difference is not technology, it is that GitHub could issue a
+      # short-lived token for its own registry and nobody can issue one for
+      # sshd.
       # =====================================================================
       - name: Configure SSH
         run: |
@@ -133,14 +144,23 @@ jobs:
           HOST: ${{ secrets.GPU_HOST }}
           USER_NAME: ${{ secrets.GPU_USER }}
           SHA: ${{ github.sha }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ssh -i ~/.ssh/deploy_key "$USER_NAME@$HOST" bash -euo pipefail <<EOF
             cd ~/agent-deploy-session
+            # Short-lived, per-run registry credential. Works whether the
+            # package is public or private, so the deploy does not depend on
+            # somebody having clicked "change visibility" in a web UI.
+            echo "$REGISTRY_TOKEN" | docker login ghcr.io \
+              -u "$REGISTRY_USER" --password-stdin
             docker pull ${{ env.IMAGE }}:$SHA
             # Point the service at this exact build, then restart only it.
             CHAT_APP_IMAGE=${{ env.IMAGE }}:$SHA \
               docker compose up -d --no-deps chat-agents
             docker compose ps chat-agents
+            # The credential outlives nothing: drop it from the box's config.
+            docker logout ghcr.io
           EOF
 
       # Step 4 is a restart, which means a few seconds of downtime and no way
