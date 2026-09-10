@@ -25,18 +25,6 @@ fastembed==0.8.0
 langgraph==1.2.11
 langchain-core==1.6.2
 
-# Guardrails AI, as a measurable alternative to the hand-written guards.
-# Only imported when GUARD_BACKEND=framework, but pinned here so the image is
-# reproducible either way.
-#
-# openinference-instrumentation-guardrails is discovered automatically by
-# register(auto_instrument=True) in app/observability.py -- installing it is
-# what makes validator outcomes appear as Phoenix spans. That is the same
-# auto-discovery that once silently changed the shape of our Stage 3 traces,
-# so it is deliberate here, not incidental.
-guardrails-ai==0.11.0
-openinference-instrumentation-guardrails==0.1.22
-
 # Tests.
 pytest==9.1.1
 

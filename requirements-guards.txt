@@ -1,0 +1,34 @@
+# Guardrails AI. DELIBERATELY NOT IN requirements.txt.
+#
+# It declares openai<3.0.0,>=2.0.0 (and pulls litellm, which declares the
+# same). This project pins openai==3.10.0 -- the client every stage uses to
+# talk to vLLM -- so pip refuses to install them together:
+#
+#   ERROR: Cannot install -r requirements.txt and openai==3.10.0 because
+#   these package versions have conflicting dependencies.
+#
+# Measured, so state it accurately: the conflict is DECLARED, not proven. The
+# full 72-test suite passes with guardrails-ai 0.11.0 and openai 3.10.0 both
+# present -- the guard path never touches the OpenAI client. It looks like a
+# conservative upper pin rather than a real incompatibility.
+#
+# It still stays out of the app image, for two reasons. pip in a loose venv
+# resolves the conflict by silently downgrading openai to 2.x, which is how
+# it went unnoticed here for a while and would eventually have been shipped.
+# And a guardrail library should not get a vote on the version of the client
+# your application is built on.
+#
+# Install it only where you want to measure the framework backend:
+#
+#   python -m venv .venv-guards
+#   .venv-guards/bin/pip install -r requirements.txt -r requirements-guards.txt
+#   GUARD_BACKEND=framework .venv-guards/bin/python evals/guard_eval.py
+#
+# Also NOT installed: openinference-instrumentation-guardrails. It pins
+# guardrails-ai>=0.4.5,<0.5.1 -- six majors behind -- so auto_instrument
+# finds it, fails a dependency check, and instruments nothing, silently:
+# is_instrumented stays False and no error surfaces. A guard that runs but
+# emits no span is worse than no instrumentor, so the span comes from our own
+# guard_span() wrapper in app/api.py, which works for either backend.
+
+guardrails-ai==0.11.0

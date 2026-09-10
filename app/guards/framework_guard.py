@@ -5,6 +5,22 @@ on the same answer key, rather than arguing about it. Our guard stays the
 default; this one runs when GUARD_BACKEND=framework, and evals/guard_eval.py
 scores both.
 
+MEASURED COST, and quote whichever matches what you are describing -- the two
+numbers differ by an order of magnitude because they measure different paths:
+
+  pass path, function call in isolation, median of 200
+      hand 0.0054 ms   framework 0.6323 ms    117x, +0.63 ms
+
+  reject path, inside its span, on the H100 box, 22 requests each
+      hand 0.38 ms     framework 4.98 ms       13x,  +4.6 ms
+
+The reject path is dearer because the framework raises, and this module then
+stringifies the exception and regexes the reason back out of it. Rejections
+are rare, so the pass number is the one that describes steady state.
+
+Either way the absolute cost is small next to the 102 ms output guard. The
+framework is not slow; it is just not free.
+
 READ THE TELEMETRY NOTE BELOW BEFORE USING THIS ANYWHERE REAL.
 """
 

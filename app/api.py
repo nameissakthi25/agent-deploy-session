@@ -5,6 +5,7 @@ startup -- there are no branches or tags for the three stages, and the only
 difference between what runs on 8101, 8102 and 8103 is that variable.
 """
 
+import sys
 from contextlib import asynccontextmanager, contextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -36,8 +37,15 @@ def _select_input_guard():
     """Pick the input guard. Imported lazily -- Guardrails AI is heavy, and a
     container running the default should not pay to import it."""
     if GUARD_BACKEND == "framework":
-        from app.guards.framework_guard import BACKEND, check_input
-
+        try:
+            from app.guards.framework_guard import BACKEND, check_input
+        except ImportError as error:
+            sys.exit(
+                "FATAL: GUARD_BACKEND=framework, but guardrails-ai is not "
+                "installed. It is not in requirements.txt on purpose -- it "
+                "requires openai<3.0.0 and this project pins openai==3.10.0. "
+                f"See requirements-guards.txt. ({error})"
+            )
         print(f"input guard: {BACKEND}")
         return check_input
     print("input guard: hand-written")
@@ -97,6 +105,12 @@ def guard_span(name: str):
     """
     with _tracer.start_as_current_span(name) as span:
         span.set_attribute("guardrail.name", name)
+        # Which implementation actually ran. The framework's own OpenInference
+        # instrumentor cannot be used -- it pins a guardrails-ai six majors
+        # old and silently instruments nothing -- so this attribute is the
+        # only thing in the trace that distinguishes the two backends.
+        if name == "input_guard":
+            span.set_attribute("guardrail.backend", GUARD_BACKEND)
         try:
             yield span
         except (InputRejected, OutputRejected) as error:

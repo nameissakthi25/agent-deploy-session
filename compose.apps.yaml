@@ -29,6 +29,10 @@ x-app-env: &app-env
   VLLM_BASE_URL: http://vllm:8000/v1
   MODEL_NAME: qwen3
   PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006/v1/traces
+  # Which input guard runs: "hand" (default) or "framework" (Guardrails AI).
+  # Set it per service to run both at once and compare them in one Phoenix
+  # project -- the input_guard span carries guardrail.backend either way.
+  GUARD_BACKEND: ${GUARD_BACKEND:-hand}
 
 # Stages 2 and 3 retrieve, so they also get a vector database connection
 # string. A connection string, not a path -- the app does not know or care
