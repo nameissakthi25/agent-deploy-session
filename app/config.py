@@ -82,6 +82,16 @@ def require_qdrant_url() -> str:
     return QDRANT_URL
 
 
+# Which input guard runs: "hand" (default) or "framework" (Guardrails AI).
+# Both raise InputRejected with the same reason string, so nothing downstream
+# changes. See app/guards/framework_guard.py and evals/guard_eval.py, which
+# scores whichever ones are available.
+GUARD_BACKEND = os.environ.get("GUARD_BACKEND", "hand").strip().lower()
+if GUARD_BACKEND not in {"hand", "framework"}:
+    sys.exit(
+        f"FATAL: GUARD_BACKEND must be 'hand' or 'framework'. Got {GUARD_BACKEND!r}."
+    )
+
 # The Phoenix REST API, used to write thumbs up/down annotations. Distinct
 # from the OTLP collector endpoint above: that one receives spans, this one
 # takes annotations. Defaults to the collector endpoint with the OTLP path

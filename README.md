@@ -156,7 +156,7 @@ The same dataset against different stages shows the gate is real:
 
 | Target | Average | Normalised | Gate |
 |---|---|---|---|
-| Stage 3 (`v3`) | 4.92/5 | 97.9% | PASS, exit 0 |
+| Stage 3 (`v3`) | 4.58/5 | 89.6% | PASS, exit 0 |
 | Stage 1 (`v1`) | ~2.3/5 | 31–34% | FAIL, exit 1 |
 
 `make dataset` turns thumbs-downed traces into `evals/datasets/from_feedback.json`.
@@ -213,15 +213,18 @@ Both JSON files are generated from a pinned revision of
 [`ATTRIBUTION.md`](ATTRIBUTION.md) for provenance, licensing, and the two
 things about this data worth saying out loud during the session.
 
-The corpus is 42 markdown KB articles built from the same source. The dataset has
-14 issue families and, for instance, 26 incidents sharing the title
-"GlobalProtect VPN disconnects immediately", so retrieval has genuine
-near-duplicate documents to get wrong.
+The corpus is **50 markdown KB articles in two halves**: 42 generated from real
+incidents in the source dataset, and 8 hand-written policy and how-to documents
+kept in `policy/` (the builder deletes and rebuilds `corpus/`, so edit them
+there). Both kinds of question answer well — "how do I reset my password" returns
+the policy article with the portal URL and the password rules, cited.
 
-**Every article derives from an incident — there are no policy how-to documents.**
-So "how do I reset my password" has no good answer and will look like a retrieval
-failure. Demo questions must be incident-shaped, or a few real policy docs need
-adding.
+Two things worth demonstrating rather than avoiding. The dataset has 14 issue
+families and, for instance, 26 incidents sharing the title "GlobalProtect VPN
+disconnects immediately", so retrieval has genuine near-duplicate documents to
+get wrong. And on "how do I get access to a finance shared drive?" two incident
+articles outrank the policy article that actually answers it — 0.818 and 0.811
+against 0.808 — because the incident titles match the question lexically.
 
 ## Cost
 

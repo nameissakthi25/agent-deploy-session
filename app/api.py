@@ -13,13 +13,15 @@ from opentelemetry.trace import Status, StatusCode
 from app import graph_stage1, graph_stage2, graph_stage3
 from app.config import (
     APP_PORT,
+    GUARD_BACKEND,
     MODEL_NAME,
     PHOENIX_BASE_URL,
     STAGE,
     VLLM_BASE_URL,
 )
 from app.feedback import THUMBS_DOWN, THUMBS_UP, annotate_trace
-from app.guards.input_guard import InputRejected, check_input
+from app.guards.input_guard import InputRejected
+from app.guards.input_guard import check_input as check_input_hand
 from app.guards.output_guard import OutputRejected, check_output
 from app.llm import assert_model_server_reachable, make_client
 from app.observability import current_trace_id, setup_tracing
@@ -28,6 +30,21 @@ from app.schemas import ChatRequest, ChatResponse, FeedbackRequest
 # Must run before the OpenAI client is built, so the instrumentation is in
 # place by the time the client is created.
 _tracer = setup_tracing()
+
+
+def _select_input_guard():
+    """Pick the input guard. Imported lazily -- Guardrails AI is heavy, and a
+    container running the default should not pay to import it."""
+    if GUARD_BACKEND == "framework":
+        from app.guards.framework_guard import BACKEND, check_input
+
+        print(f"input guard: {BACKEND}")
+        return check_input
+    print("input guard: hand-written")
+    return check_input_hand
+
+
+check_input = _select_input_guard()
 
 # Built once at startup, so an unsupported STAGE fails immediately rather than
 # on the first request.

@@ -71,6 +71,33 @@ def matches_any_pattern(value: str) -> str | None:
     return None
 
 
+def framework_detects(value: str) -> bool | None:
+    """Same question, asked of the Guardrails AI guard. None if unavailable.
+
+    Worth knowing before reading any comparison this produces: with the
+    default LOCAL validator the framework reuses PII_PATTERNS, so it scores
+    identically by construction. That is the honest result, not a bug -- the
+    local validator exists to prove the wiring works with no Hub and no
+    network.
+
+    The comparison only becomes interesting with a Hub validator, which wraps
+    Presidio and should beat 14% corpus coverage substantially:
+
+        guardrails hub install hub://guardrails/detect_pii
+        GUARD_VALIDATOR=hub python evals/guard_eval.py
+    """
+    try:
+        from app.guards.framework_guard import check_input
+        from app.guards.input_guard import InputRejected
+    except ImportError:
+        return None
+    try:
+        check_input(value)
+        return False
+    except InputRejected:
+        return True
+
+
 def score_detection(pii: list) -> tuple[Counter, Counter, Counter]:
     """How many PII values does the guard catch, by type?"""
     caught: Counter = Counter()
@@ -148,6 +175,23 @@ def main() -> int:
         f"\n  False positive rate         : {percent(fp_total, retain_all)}"
         f"  ({fp_total}/{retain_all})"
     )
+
+    # Second backend, if Guardrails AI is installed.
+    sample = [i["value"] for r in pii for i in r["pii_instances"]][:400]
+    probe = framework_detects(sample[0]) if sample else None
+    if probe is None:
+        print("\n  (guardrails-ai not installed -- skipping the comparison)")
+    else:
+        from app.guards.framework_guard import BACKEND
+
+        caught_fw = sum(1 for v in sample if framework_detects(v))
+        caught_ours = sum(1 for v in sample if matches_any_pattern(v))
+        print(f"\nSame {len(sample)} PII values, two backends")
+        print(f"  hand-written                : {percent(caught_ours, len(sample))}")
+        print(f"  {BACKEND:28}: {percent(caught_fw, len(sample))}")
+        if BACKEND.endswith("/local"):
+            print("  Identical by construction -- the local validator reuses")
+            print("  PII_PATTERNS. Install a Hub validator for a real comparison.")
 
     detection_rate = targeted_caught / targeted_total if targeted_total else 0.0
     fp_rate = fp_total / retain_all if retain_all else 0.0
